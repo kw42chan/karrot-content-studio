@@ -42,11 +42,13 @@ Apply migrations in order:
 supabase db push
 # Or run SQL manually in the SQL editor:
 # supabase/migrations/20261005080000_studio_tables.sql
+# supabase/migrations/20261005090000_studio_comments.sql
 ```
 
 **Important**
 
-- If `ADMIN_EMAIL` is not `darwin.chankawing@gmail.com`, edit `public.studio_admin_email()` in the migration before applying.
+- If `ADMIN_EMAIL` is not `darwin.chankawing@gmail.com`, edit `public.studio_admin_email()` in the first migration before applying.
+- Apply migrations in timestamp order (`20261005080000` then `20261005090000`).
 
 ### 4. Supabase Auth
 

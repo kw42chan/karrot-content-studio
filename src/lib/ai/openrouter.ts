@@ -2,6 +2,7 @@ import { getOpenRouterKey, getOpenRouterModel, getSiteUrl } from "@/lib/env";
 import type { BilingualSummary } from "@/lib/sources/types";
 import fixtureSummaries from "@/lib/fixtures/summaries.json";
 import { normalizeSourceUrl } from "@/lib/sources/normalize-url";
+import { sourceTextForAi } from "@/lib/sources/text-for-ai";
 
 const summarySchema = `{
   "en": { "headline": string, "summary": string, "points": string[] },
@@ -44,7 +45,7 @@ Source title: ${title ?? "(none)"}
 Source URL: ${sourceUrl}
 
 Source text:
-${text.slice(0, 12000)}`;
+${sourceTextForAi(text, 12000)}`;
 
   const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
     method: "POST",
@@ -80,7 +81,14 @@ export async function draftPostBody(params: {
   title: string;
   language: "zh-HK" | "en";
   myTake: string;
-  sources: { author: string | null; title: string | null; url: string; summaryEn: string; summaryZh: string }[];
+  sources: {
+    author: string | null;
+    title: string | null;
+    url: string;
+    summaryEn: string;
+    summaryZh: string;
+    fullText: string;
+  }[];
 }): Promise<{ body: string; keyPoint: string; socialCaptions: { zh: string; en: string } }> {
   const apiKey = getOpenRouterKey();
   if (!apiKey) {
@@ -106,9 +114,9 @@ Sources:
 ${params.sources
   .map(
     (s, i) =>
-      `${i + 1}. ${s.author ?? "Unknown"} — ${s.title ?? s.url}\nEN: ${s.summaryEn}\nZH: ${s.summaryZh}`,
+      `${i + 1}. ${s.author ?? "Unknown"} — ${s.title ?? s.url}\nEN summary: ${s.summaryEn}\nZH summary: ${s.summaryZh}\nFull source text:\n${sourceTextForAi(s.fullText, 14000)}`,
   )
-  .join("\n\n")}`;
+  .join("\n\n\n")}`;
 
   const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
     method: "POST",
@@ -187,10 +195,59 @@ New source summary: ${params.newSourceSummary}`;
   return parsed.paragraph;
 }
 
+export async function reviseDraftFromComments(params: {
+  postTitle: string;
+  language: "zh-HK" | "en";
+  draftBody: string;
+  comments: string[];
+}): Promise<string> {
+  const apiKey = getOpenRouterKey();
+  const joined = params.comments.map((c, i) => `${i + 1}. ${c}`).join("\n");
+  if (!apiKey) {
+    return params.language === "zh-HK"
+      ? `（依評論修訂示範）\n\n${params.comments[0] ?? ""}`
+      : `(Demo revision from comments)\n\n${params.comments[0] ?? ""}`;
+  }
+
+  const prompt = `You revise a blog draft based on editor comments. Return JSON: { "paragraph": "markdown paragraphs to INSERT into the draft (not the full post)" }
+Rules:
+- Never rewrite or mention "My take" — that section is separate and protected.
+- Apply the comments to improve the draft body only.
+- Language: ${params.language === "zh-HK" ? "Traditional Chinese 香港書面語" : "English"}
+- Output only the new/revised markdown sections the editor should add or substitute in the main draft (no Sources section).
+
+Title: ${params.postTitle}
+Current draft (excerpt): ${params.draftBody.slice(0, 6000)}
+Comments:
+${joined}`;
+
+  const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+      "HTTP-Referer": getSiteUrl(),
+      "X-Title": "Karrot Content Studio",
+    },
+    body: JSON.stringify({
+      model: getOpenRouterModel(),
+      messages: [{ role: "user", content: prompt }],
+      response_format: { type: "json_object" },
+    }),
+  });
+
+  if (!res.ok) throw new Error(`OpenRouter comment revision failed: ${res.status}`);
+  const json = (await res.json()) as { choices?: { message?: { content?: string } }[] };
+  const content = json.choices?.[0]?.message?.content;
+  if (!content) throw new Error("Empty comment revision response");
+  const parsed = JSON.parse(content) as { paragraph: string };
+  return parsed.paragraph;
+}
+
 function offlineDraft(params: {
   title: string;
   language: "zh-HK" | "en";
-  sources: { summaryEn: string; summaryZh: string }[];
+  sources: { summaryEn: string; summaryZh: string; fullText?: string }[];
 }): { body: string; keyPoint: string; socialCaptions: { zh: string; en: string } } {
   const summary = params.sources[0]?.summaryZh ?? params.sources[0]?.summaryEn ?? "";
   if (params.language === "zh-HK") {

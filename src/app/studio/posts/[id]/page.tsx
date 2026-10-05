@@ -30,9 +30,15 @@ export default async function StudioPostPage({
 
   const { data: suggestions } = await supabase
     .from("studio_suggestions")
-    .select("id, paragraph, source_id")
+    .select("id, paragraph, source_id, label")
     .eq("post_id", id)
     .eq("status", "pending");
+
+  const { data: comments } = await supabase
+    .from("studio_post_comments")
+    .select("id, body, resolved, created_at")
+    .eq("post_id", id)
+    .order("created_at", { ascending: true });
 
   const { data: versions } = await supabase
     .from("studio_post_versions")
@@ -52,6 +58,7 @@ export default async function StudioPostPage({
         body: post.body,
         body_language: post.body_language,
         key_point: post.key_point,
+        social_title: post.social_title ?? null,
         social_captions: post.social_captions,
         kit_broadcast_id: post.kit_broadcast_id,
       }}
@@ -62,10 +69,17 @@ export default async function StudioPostPage({
         url: s!.url,
         platform: s!.platform,
         full_text: s!.full_text,
+        text_content: s!.text_content,
         summary_en: s!.summary_en,
         summary_zh: s!.summary_zh,
       }))}
-      suggestions={suggestions ?? []}
+      suggestions={(suggestions ?? []).map((s) => ({
+        id: s.id,
+        paragraph: s.paragraph,
+        source_id: s.source_id,
+        label: s.label ?? undefined,
+      }))}
+      comments={comments ?? []}
       versions={versions ?? []}
     />
   );

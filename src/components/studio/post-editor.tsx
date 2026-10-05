@@ -1,16 +1,20 @@
 "use client";
 
 import {
+  addPostComment,
   addSourceToPost,
+  applyPostComments,
   draftPostWithAi,
   publishPostToKit,
+  resolvePostComment,
   resolveSuggestion,
   restoreVersion,
   savePost,
 } from "@/app/actions/studio";
+import { SourceCard } from "@/components/studio/source-card";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 
 export type EditorSource = {
   id: string;
@@ -19,6 +23,7 @@ export type EditorSource = {
   url: string;
   platform: string;
   full_text: boolean;
+  text_content?: string | null;
   summary_en: { headline?: string; summary?: string; points?: string[] } | null;
   summary_zh: { headline?: string; summary?: string; points?: string[] } | null;
 };
@@ -26,8 +31,15 @@ export type EditorSource = {
 export type EditorSuggestion = {
   id: string;
   paragraph: string;
-  source_id: string;
+  source_id: string | null;
   label?: string;
+};
+
+export type EditorComment = {
+  id: string;
+  body: string;
+  resolved: boolean;
+  created_at: string;
 };
 
 export type EditorVersion = {
@@ -45,6 +57,7 @@ export type EditorPost = {
   body: string;
   body_language: "zh-HK" | "en";
   key_point: string | null;
+  social_title: string | null;
   social_captions: { zh?: string; en?: string } | null;
   kit_broadcast_id: string | null;
 };
@@ -53,12 +66,14 @@ export function PostEditor({
   post,
   sources,
   suggestions,
+  comments: initialComments,
   versions,
   demoMode = false,
 }: {
   post: EditorPost;
   sources: EditorSource[];
   suggestions: EditorSuggestion[];
+  comments: EditorComment[];
   versions: EditorVersion[];
   demoMode?: boolean;
 }) {
@@ -69,23 +84,44 @@ export function PostEditor({
   const [myTake, setMyTake] = useState(post.my_take);
   const [body, setBody] = useState(post.body);
   const [lang, setLang] = useState(post.body_language);
+  const [keyPoint, setKeyPoint] = useState(post.key_point ?? "");
+  const [socialTitle, setSocialTitle] = useState(post.social_title ?? post.title);
+  const [socialZh, setSocialZh] = useState(post.social_captions?.zh ?? "");
+  const [socialEn, setSocialEn] = useState(post.social_captions?.en ?? "");
   const [linkInput, setLinkInput] = useState("");
+  const [commentInput, setCommentInput] = useState("");
+  const [comments, setComments] = useState(initialComments);
   const [message, setMessage] = useState<string | null>(null);
+  const [messageIsError, setMessageIsError] = useState(false);
   const [publishMode, setPublishMode] = useState<"web_only" | "web_and_email">("web_only");
   const [confirmEmail, setConfirmEmail] = useState(false);
   const [localSuggestions, setLocalSuggestions] = useState(suggestions);
+  const [ogTick, setOgTick] = useState(0);
+
+  useEffect(() => {
+    setLocalSuggestions(suggestions);
+  }, [suggestions]);
+
+  useEffect(() => {
+    setComments(initialComments);
+  }, [initialComments]);
 
   const bodyDisplay = useMemo(() => stripSourcesForEditor(body), [body]);
   const creditsBlock = useMemo(() => extractSourcesBlock(body), [body]);
 
-  const socialTitle = encodeURIComponent(title);
-  const socialKey = encodeURIComponent(post.key_point ?? "");
-  const squareOg = `/api/og/social?title=${socialTitle}&keyPoint=${socialKey}&format=square`;
-  const portraitOg = `/api/og/social?title=${socialTitle}&keyPoint=${socialKey}&format=portrait`;
+  const socialTitleEnc = encodeURIComponent(socialTitle || title);
+  const socialKeyEnc = encodeURIComponent(keyPoint);
+  const squareOg = `/api/og/social?title=${socialTitleEnc}&keyPoint=${socialKeyEnc}&format=square&v=${ogTick}`;
+  const portraitOg = `/api/og/social?title=${socialTitleEnc}&keyPoint=${socialKeyEnc}&format=portrait&v=${ogTick}`;
+
+  function notify(text: string, isError = false) {
+    setMessage(text);
+    setMessageIsError(isError);
+  }
 
   function run(fn: () => Promise<void>) {
     if (demoMode) {
-      setMessage("Demo only — connect Supabase to save.");
+      notify("Demo only — connect Supabase to save.", true);
       return;
     }
     start(async () => {
@@ -94,8 +130,36 @@ export function PostEditor({
         await fn();
         router.refresh();
       } catch (e) {
-        setMessage(e instanceof Error ? e.message : "Something went wrong");
+        notify(e instanceof Error ? e.message : "Something went wrong", true);
       }
+    });
+  }
+
+  async function handleSave() {
+    if (demoMode) {
+      notify("Demo only — connect Supabase to save.", true);
+      return;
+    }
+    start(async () => {
+      const result = await savePost({
+        id: post.id,
+        title,
+        slug,
+        my_take: myTake,
+        body,
+        body_language: lang,
+        status: post.status,
+        key_point: keyPoint,
+        social_title: socialTitle,
+        social_captions: { zh: socialZh, en: socialEn },
+      });
+      if (!result.ok) {
+        notify(result.error, true);
+        return;
+      }
+      setOgTick((t) => t + 1);
+      notify("Saved");
+      router.refresh();
     });
   }
 
@@ -121,22 +185,7 @@ export function PostEditor({
               type="button"
               disabled={pending}
               className="studio-btn studio-btn-ghost"
-              onClick={() =>
-                run(async () => {
-                  await savePost({
-                    id: post.id,
-                    title,
-                    slug,
-                    my_take: myTake,
-                    body,
-                    body_language: lang,
-                    status: post.status,
-                    key_point: post.key_point ?? undefined,
-                    social_captions: post.social_captions ?? undefined,
-                  });
-                  setMessage("Saved");
-                })
-              }
+              onClick={handleSave}
             >
               Save
             </button>
@@ -146,7 +195,7 @@ export function PostEditor({
               onClick={() =>
                 run(async () => {
                   await publishPostToKit(post.id, publishMode, confirmEmail);
-                  setMessage("Published to Kit");
+                  notify("Published to Kit");
                 })
               }
             >
@@ -157,7 +206,13 @@ export function PostEditor({
       </header>
 
       {message && (
-        <p className="mx-auto max-w-[1320px] px-6 pt-3 text-sm text-[var(--karrot-muted)]">{message}</p>
+        <p
+          className={`mx-auto max-w-[1320px] px-6 pt-3 text-sm ${
+            messageIsError ? "font-medium text-red-700" : "text-[var(--karrot-muted)]"
+          }`}
+        >
+          {message}
+        </p>
       )}
 
       <div className="studio-shell">
@@ -176,7 +231,7 @@ export function PostEditor({
                 run(async () => {
                   await addSourceToPost(post.id, linkInput);
                   setLinkInput("");
-                  setMessage("Source added");
+                  notify("Source added");
                 });
               }}
             >
@@ -196,20 +251,7 @@ export function PostEditor({
               </button>
             </form>
             {sources.map((s) => (
-              <div key={s.id} className="studio-src">
-                <div className="studio-src-name">{s.author ?? s.title ?? "Source"}</div>
-                <p className="studio-src-oneliner">
-                  <span className="text-[11px] font-semibold text-[var(--karrot-accent)]">中文</span>{" "}
-                  {s.summary_zh?.summary}
-                </p>
-                <p className="studio-src-oneliner">
-                  <span className="text-[11px] font-semibold text-[var(--karrot-muted)]">EN</span>{" "}
-                  {s.summary_en?.summary}
-                </p>
-                <span className={s.full_text ? "studio-badge-full" : "studio-badge-partial"}>
-                  {s.full_text ? "Full article read" : "Opening section only"}
-                </span>
-              </div>
+              <SourceCard key={s.id} source={s} />
             ))}
           </div>
         </aside>
@@ -243,12 +285,13 @@ export function PostEditor({
               <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-[var(--karrot-muted)]">
                 Draft from sources
               </h3>
-              <div className="studio-draft-area">
+              <div className="studio-draft-area rounded-xl border border-[var(--karrot-border)] bg-[var(--karrot-bg)]/40 p-3">
                 <textarea
                   value={bodyDisplay}
                   onChange={(e) => setBody(mergeBodyWithSources(e.target.value, body))}
-                  rows={12}
+                  rows={14}
                   readOnly={demoMode}
+                  className="min-h-[280px]"
                 />
               </div>
               {localSuggestions.map((sug) => (
@@ -311,6 +354,87 @@ export function PostEditor({
                 <div className="whitespace-pre-wrap text-sm">{creditsBlock}</div>
               </div>
             )}
+
+            <section className="mt-8 rounded-xl border border-[var(--karrot-border)] bg-[var(--karrot-card)] p-5">
+              <h3 className="studio-block-label">Comments on this draft</h3>
+              <p className="mb-3 text-xs text-[var(--karrot-muted)]">
+                Notes for yourself or instructions for AI. Apply sends open comments as a suggestion
+                — My take is never changed automatically.
+              </p>
+              <ul className="mb-4 space-y-2">
+                {comments.map((c) => (
+                  <li
+                    key={c.id}
+                    className={`rounded-lg border px-3 py-2 text-sm ${
+                      c.resolved
+                        ? "border-transparent bg-white/50 opacity-60"
+                        : "border-[var(--karrot-border)] bg-white"
+                    }`}
+                  >
+                    <p>{c.body}</p>
+                    <div className="mt-1 flex items-center justify-between text-[11px] text-[var(--karrot-muted)]">
+                      <span>{new Date(c.created_at).toLocaleString()}</span>
+                      {c.resolved ? (
+                        <span>Resolved</span>
+                      ) : (
+                        <button
+                          type="button"
+                          className="font-semibold text-[var(--karrot-accent)]"
+                          onClick={() =>
+                            run(async () => {
+                              await resolvePostComment(c.id);
+                              notify("Comment resolved");
+                            })
+                          }
+                        >
+                          Mark resolved
+                        </button>
+                      )}
+                    </div>
+                  </li>
+                ))}
+                {!comments.length && (
+                  <li className="text-sm text-[var(--karrot-muted)]">No comments yet.</li>
+                )}
+              </ul>
+              <textarea
+                value={commentInput}
+                onChange={(e) => setCommentInput(e.target.value)}
+                rows={3}
+                placeholder="Add a comment or instruction…"
+                className="mb-2 w-full rounded-lg border border-[var(--karrot-border)] p-2 text-sm"
+                disabled={demoMode}
+              />
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  className="studio-btn studio-btn-ghost h-8 text-xs"
+                  disabled={demoMode || !commentInput.trim()}
+                  onClick={() =>
+                    run(async () => {
+                      await addPostComment(post.id, commentInput);
+                      setCommentInput("");
+                      notify("Comment added");
+                    })
+                  }
+                >
+                  Add comment
+                </button>
+                <button
+                  type="button"
+                  className="studio-btn studio-btn-primary h-8 text-xs"
+                  disabled={demoMode}
+                  onClick={() =>
+                    run(async () => {
+                      await applyPostComments(post.id);
+                      notify("Applied comments — review the suggestion above");
+                    })
+                  }
+                >
+                  Apply comments
+                </button>
+              </div>
+            </section>
           </div>
         </main>
 
@@ -355,33 +479,62 @@ export function PostEditor({
             )}
             <div>
               <p className="mb-2 text-xs font-semibold text-[var(--karrot-muted)]">Social formats</p>
+              <label className="studio-field">
+                Image headline (Anton)
+                <input
+                  value={socialTitle}
+                  onChange={(e) => {
+                    setSocialTitle(e.target.value);
+                    setOgTick((t) => t + 1);
+                  }}
+                />
+              </label>
+              <label className="studio-field">
+                Key point (Roboto)
+                <input
+                  value={keyPoint}
+                  onChange={(e) => {
+                    setKeyPoint(e.target.value);
+                    setOgTick((t) => t + 1);
+                  }}
+                />
+              </label>
+              <label className="mb-1 mt-2 block text-xs font-semibold text-[var(--karrot-muted)]">
+                中文 caption
+              </label>
               <textarea
-                readOnly
-                rows={2}
+                rows={3}
                 className="mb-1 w-full rounded-lg border border-[var(--karrot-border)] p-2 text-xs"
-                value={post.social_captions?.zh ?? ""}
+                value={socialZh}
+                onChange={(e) => setSocialZh(e.target.value)}
               />
               <button
                 type="button"
                 className="text-xs font-semibold text-[var(--karrot-accent)]"
-                onClick={() => navigator.clipboard.writeText(post.social_captions?.zh ?? "")}
+                onClick={() => navigator.clipboard.writeText(socialZh)}
               >
                 Copy 中文 caption
               </button>
+              <label className="mb-1 mt-3 block text-xs font-semibold text-[var(--karrot-muted)]">
+                English caption
+              </label>
               <textarea
-                readOnly
-                rows={2}
-                className="mb-1 mt-2 w-full rounded-lg border border-[var(--karrot-border)] p-2 text-xs"
-                value={post.social_captions?.en ?? ""}
+                rows={3}
+                className="mb-1 w-full rounded-lg border border-[var(--karrot-border)] p-2 text-xs"
+                value={socialEn}
+                onChange={(e) => setSocialEn(e.target.value)}
               />
               <button
                 type="button"
                 className="text-xs font-semibold text-[var(--karrot-accent)]"
-                onClick={() => navigator.clipboard.writeText(post.social_captions?.en ?? "")}
+                onClick={() => navigator.clipboard.writeText(socialEn)}
               >
                 Copy English caption
               </button>
-              <div className="mt-3 flex flex-col gap-1 text-xs font-semibold text-[var(--karrot-accent)]">
+              <div className="mt-3 overflow-hidden rounded-lg border border-[var(--karrot-border)]">
+                <img src={squareOg} alt="Social preview square" className="w-full" />
+              </div>
+              <div className="mt-2 flex flex-col gap-1 text-xs font-semibold text-[var(--karrot-accent)]">
                 <a href={squareOg} download="karrot-1080-square.png">Download 1080×1080</a>
                 <a href={portraitOg} download="karrot-1080x1350.png">Download 1080×1350</a>
               </div>

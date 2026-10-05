@@ -17,6 +17,14 @@ export default function DemoStudioPage() {
           label: "Suggested from a new source · AYi tip on App Store payments",
         },
       ]}
+      comments={[
+        {
+          id: "c1",
+          body: "Add one sentence on App Store payments near the end.",
+          resolved: false,
+          created_at: new Date().toISOString(),
+        },
+      ]}
       versions={[]}
     />
   );

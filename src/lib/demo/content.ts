@@ -19,6 +19,7 @@ BrewBytes 則指出，問題未必是「用了 VPN」這麼簡單，Claude 會�
   body_language: "zh-HK",
   key_point:
     "香港創作者把網絡、裝置與付款當成一套系統，而不只是換 VPN。",
+  social_title: "Claude 封號：香港創作者實戰",
   social_captions: {
     zh: "Claude 封號：香港創作者實戰整理\n\n網絡、裝置、付款要一齊設計。",
     en: "Claude bans: what HK creators are actually doing\n\nNetwork, device, and payment as one stack.",
@@ -34,6 +35,8 @@ export const DEMO_SOURCES: EditorSource[] = [
     url: "https://x.com/MagicPower21M/status/2106653640588927234",
     platform: "x",
     full_text: true,
+    text_content:
+      "作者在被封號六次後，透過搭建搬瓦工VPS加AT&T美國住宅IP的雙層網絡，成功避免再被封號。",
     summary_zh: {
       headline: "連續六次被Claude封號後的最終解決方案",
       summary:
@@ -54,6 +57,8 @@ export const DEMO_SOURCES: EditorSource[] = [
     url: "https://x.com/AYi_AInotes/status/2106639522586829094",
     platform: "x",
     full_text: true,
+    text_content:
+      "文章詳述如何透過環境、支付、使用行為及設定四層防線，保護Claude帳號免遭封禁。",
     summary_zh: {
       headline: "2026年Claude防封實用指南",
       summary:
@@ -74,6 +79,8 @@ export const DEMO_SOURCES: EditorSource[] = [
     url: "https://www.threads.com/share/EtCKem4fj/",
     platform: "threads",
     full_text: false,
+    text_content:
+      "Claude 封鎖香港用戶並非單因使用 VPN，而是綜合分析裝置及網絡環境所致。",
     summary_zh: {
       headline: "Claude 大規模封香港用戶 真係因為你個 VPN唔乾淨",
       summary:
