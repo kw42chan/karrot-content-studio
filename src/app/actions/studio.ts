@@ -7,6 +7,12 @@ import {
   suggestEnrichmentParagraph,
   summarizeSource,
 } from "@/lib/ai/openrouter";
+import {
+  draftVariantFromSources,
+  generateVariantFromBlog,
+  reviseVariantFromComments,
+} from "@/lib/ai/variant-draft";
+import type { StudioChannel, VariantExtra } from "@/lib/studio/channels";
 import { publishToKit, type KitPublishMode } from "@/lib/kit/client";
 import { renderKitPostHtml } from "@/lib/kit/render-post-html";
 import {
@@ -151,6 +157,7 @@ export async function addSourceToPost(postId: string, rawUrl: string) {
       paragraph,
       status: "pending",
       label: "Suggested from a new source",
+      channel: "blog",
     });
   }
 
@@ -267,7 +274,68 @@ export async function resolvePostComment(commentId: string) {
   revalidatePath(`/studio/posts/${data.post_id}`);
 }
 
-export async function applyPostComments(postId: string) {
+export async function saveVariant(input: {
+  postId: string;
+  channel: "x" | "threads" | "zh" | "en";
+  content: string;
+  extra?: VariantExtra;
+}): Promise<SavePostResult> {
+  try {
+    const supabase = await requireAdmin();
+    const extra = input.extra ?? {};
+
+    const { data, error } = await supabase
+      .from("studio_post_variants")
+      .upsert(
+        {
+          post_id: input.postId,
+          channel: input.channel,
+          content: input.content,
+          extra,
+        },
+        { onConflict: "post_id,channel" },
+      )
+      .select("post_id")
+      .single();
+
+    if (error) return { ok: false, error: `Save failed: ${error.message}` };
+    if (!data) return { ok: false, error: "Save failed: no row updated (check RLS)." };
+
+    await supabase.from("studio_post_variant_versions").insert({
+      post_id: input.postId,
+      channel: input.channel,
+      content: input.content,
+      extra,
+    });
+
+    if (input.channel === "zh" || input.channel === "en") {
+      const { data: post } = await supabase
+        .from("studio_posts")
+        .select("social_captions")
+        .eq("id", input.postId)
+        .single();
+      const caps = (post?.social_captions as { zh?: string; en?: string }) ?? {};
+      await supabase
+        .from("studio_posts")
+        .update({
+          social_captions: {
+            ...caps,
+            [input.channel === "zh" ? "zh" : "en"]: input.content,
+          },
+          ...(extra.social_title ? { social_title: extra.social_title } : {}),
+          ...(extra.key_point ? { key_point: extra.key_point } : {}),
+        })
+        .eq("id", input.postId);
+    }
+
+    revalidatePath(`/studio/posts/${input.postId}`);
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Save failed" };
+  }
+}
+
+export async function applyPostComments(postId: string, channel: StudioChannel) {
   const supabase = await requireAdmin();
   const { data: comments } = await supabase
     .from("studio_post_comments")
@@ -285,13 +353,31 @@ export async function applyPostComments(postId: string) {
     .single();
   if (!post) throw new Error("Post not found");
 
-  const draftBody = stripSourcesSection(post.body as string);
-  const paragraph = await reviseDraftFromComments({
-    postTitle: post.title as string,
-    language: post.body_language as "zh-HK" | "en",
-    draftBody,
-    comments: comments.map((c) => c.body as string),
-  });
+  const lang = post.body_language as "zh-HK" | "en";
+  let paragraph: string;
+
+  if (channel === "blog") {
+    paragraph = await reviseDraftFromComments({
+      postTitle: post.title as string,
+      language: lang,
+      draftBody: stripSourcesSection(post.body as string),
+      comments: comments.map((c) => c.body as string),
+    });
+  } else {
+    const { data: variant } = await supabase
+      .from("studio_post_variants")
+      .select("content")
+      .eq("post_id", postId)
+      .eq("channel", channel)
+      .maybeSingle();
+    paragraph = await reviseVariantFromComments({
+      channel,
+      postTitle: post.title as string,
+      language: lang,
+      currentContent: (variant?.content as string) ?? "",
+      comments: comments.map((c) => c.body as string),
+    });
+  }
 
   const { error: sugErr } = await supabase.from("studio_suggestions").insert({
     post_id: postId,
@@ -299,6 +385,7 @@ export async function applyPostComments(postId: string) {
     paragraph,
     status: "pending",
     label: "Suggested from your comments",
+    channel,
   });
   if (sugErr) throw new Error(sugErr.message);
 
@@ -308,7 +395,7 @@ export async function applyPostComments(postId: string) {
   revalidatePath(`/studio/posts/${postId}`);
 }
 
-export async function draftPostWithAi(postId: string) {
+export async function draftPostWithAi(postId: string, channel: StudioChannel) {
   const supabase = await requireAdmin();
   const { data: post } = await supabase.from("studio_posts").select("*").eq("id", postId).single();
   if (!post) throw new Error("Post not found");
@@ -316,55 +403,83 @@ export async function draftPostWithAi(postId: string) {
   const sources = await loadPostSources(supabase, postId);
   if (!sources.length) throw new Error("Attach at least one source first");
 
-  const summaries = await Promise.all(
-    sources.map(async (s) => {
-      const { data: row } = await supabase
-        .from("studio_sources")
-        .select("summary_en, summary_zh, text_content")
-        .eq("id", s.id)
-        .single();
-      return {
-        author: s.author,
-        title: s.title,
-        url: s.url,
-        summaryEn: (row?.summary_en as { summary?: string })?.summary ?? "",
-        summaryZh: (row?.summary_zh as { summary?: string })?.summary ?? "",
-        fullText: (row?.text_content as string) ?? "",
-      };
-    }),
-  );
+  const bundles = await loadSourceBundles(supabase, sources);
 
-  const drafted = await draftPostBody({
-    title: post.title,
+  if (channel === "blog") {
+    const drafted = await draftPostBody({
+      title: post.title,
+      language: post.body_language as "zh-HK" | "en",
+      myTake: post.my_take,
+      sources: bundles,
+    });
+
+    const { error: sugErr } = await supabase.from("studio_suggestions").insert({
+      post_id: postId,
+      source_id: null,
+      paragraph: drafted.body,
+      status: "pending",
+      label: "Draft from sources",
+      channel: "blog",
+      extra: {
+        key_point: drafted.keyPoint,
+        social_captions: drafted.socialCaptions,
+      },
+    });
+    if (sugErr) throw new Error(sugErr.message);
+  } else {
+    const { data: existing } = await supabase
+      .from("studio_post_variants")
+      .select("content")
+      .eq("post_id", postId)
+      .eq("channel", channel)
+      .maybeSingle();
+
+    const drafted = await draftVariantFromSources({
+      channel,
+      postTitle: post.title,
+      language: post.body_language as "zh-HK" | "en",
+      sources: bundles,
+      currentContent: existing?.content as string | undefined,
+    });
+
+    const { error: sugErr } = await supabase.from("studio_suggestions").insert({
+      post_id: postId,
+      source_id: null,
+      paragraph: drafted.content,
+      status: "pending",
+      label: "Draft from sources",
+      channel,
+      extra: drafted.extra ?? {},
+    });
+    if (sugErr) throw new Error(sugErr.message);
+  }
+
+  revalidatePath(`/studio/posts/${postId}`);
+}
+
+export async function generateVariantFromBlogAction(postId: string, channel: StudioChannel) {
+  if (channel === "blog") throw new Error("Use blog tab only");
+  const supabase = await requireAdmin();
+  const { data: post } = await supabase.from("studio_posts").select("*").eq("id", postId).single();
+  if (!post) throw new Error("Post not found");
+
+  const generated = await generateVariantFromBlog({
+    channel,
+    postTitle: post.title,
+    blogBody: stripSourcesSection(post.body as string),
     language: post.body_language as "zh-HK" | "en",
-    myTake: post.my_take,
-    sources: summaries,
   });
 
-  const sourcesMd = buildSourcesMarkdown(sources);
-  const body = appendSourcesToBody(drafted.body, sourcesMd);
-
-  const { error } = await supabase
-    .from("studio_posts")
-    .update({
-      body,
-      key_point: drafted.keyPoint,
-      social_captions: drafted.socialCaptions,
-    })
-    .eq("id", postId)
-    .select("id")
-    .single();
-
-  if (error) throw new Error(error.message);
-
-  await supabase.from("studio_post_versions").insert({
+  const { error: sugErr } = await supabase.from("studio_suggestions").insert({
     post_id: postId,
-    title: post.title,
-    my_take: post.my_take,
-    body,
-    body_language: post.body_language,
+    source_id: null,
+    paragraph: generated.content,
+    status: "pending",
+    label: "Generated from blog",
+    channel,
+    extra: generated.extra ?? {},
   });
-
+  if (sugErr) throw new Error(sugErr.message);
   revalidatePath(`/studio/posts/${postId}`);
 }
 
@@ -397,35 +512,76 @@ export async function resolveSuggestion(
     .single();
   if (!post) throw new Error("Post missing");
 
-  const paragraph = editedText ?? sug.paragraph;
-  const marker = "## Sources";
-  let newBody = post.body as string;
-  if (newBody.includes(marker)) {
-    newBody = newBody.replace(marker, `${paragraph}\n\n${marker}`);
-  } else {
-    newBody = `${newBody.trim()}\n\n${paragraph}`;
-  }
+  const paragraph = editedText ?? (sug.paragraph as string);
+  const channel = (sug.channel as StudioChannel) ?? "blog";
+  const extra = (sug.extra as VariantExtra & { social_captions?: { zh?: string; en?: string } }) ?? {};
 
-  const { error: upErr } = await supabase
-    .from("studio_posts")
-    .update({ body: newBody })
-    .eq("id", sug.post_id)
-    .select("id")
-    .single();
-  if (upErr) throw new Error(upErr.message);
+  if (channel === "blog") {
+    const sources = await loadPostSources(supabase, sug.post_id as string);
+    const sourcesMd = buildSourcesMarkdown(sources);
+    const marker = "## Sources";
+    let newBody: string;
+    if (sug.label === "Draft from sources") {
+      newBody = appendSourcesToBody(paragraph, sourcesMd);
+    } else if ((post.body as string).includes(marker)) {
+      newBody = (post.body as string).replace(marker, `${paragraph}\n\n${marker}`);
+    } else {
+      newBody = `${(post.body as string).trim()}\n\n${paragraph}`;
+    }
+
+    const postUpdate: Record<string, unknown> = { body: newBody };
+    if (extra.key_point) postUpdate.key_point = extra.key_point;
+    if (extra.social_captions) postUpdate.social_captions = extra.social_captions;
+
+    const { error: upErr } = await supabase
+      .from("studio_posts")
+      .update(postUpdate)
+      .eq("id", sug.post_id)
+      .select("id")
+      .single();
+    if (upErr) throw new Error(upErr.message);
+
+    await supabase.from("studio_post_versions").insert({
+      post_id: sug.post_id,
+      title: post.title,
+      my_take: post.my_take,
+      body: newBody,
+      body_language: post.body_language,
+    });
+  } else {
+    const variantExtra: VariantExtra = {
+      ...(extra.thread_parts ? { thread_parts: extra.thread_parts } : {}),
+      ...(extra.social_title ? { social_title: extra.social_title } : {}),
+      ...(extra.key_point ? { key_point: extra.key_point } : {}),
+    };
+
+    const { error: vErr } = await supabase
+      .from("studio_post_variants")
+      .upsert(
+        {
+          post_id: sug.post_id,
+          channel,
+          content: paragraph,
+          extra: variantExtra,
+        },
+        { onConflict: "post_id,channel" },
+      )
+      .select("post_id")
+      .single();
+    if (vErr) throw new Error(vErr.message);
+
+    await supabase.from("studio_post_variant_versions").insert({
+      post_id: sug.post_id,
+      channel,
+      content: paragraph,
+      extra: variantExtra,
+    });
+  }
 
   await supabase
     .from("studio_suggestions")
     .update({ status: editedText ? "edited" : "accepted" })
     .eq("id", suggestionId);
-
-  await supabase.from("studio_post_versions").insert({
-    post_id: sug.post_id,
-    title: post.title,
-    my_take: post.my_take,
-    body: newBody,
-    body_language: post.body_language,
-  });
 
   revalidatePath(`/studio/posts/${sug.post_id}`);
 }
@@ -524,4 +680,27 @@ async function loadPostSources(
 
 function stripSourcesSection(body: string): string {
   return body.replace(/\n## Sources[\s\S]*$/m, "").trim();
+}
+
+async function loadSourceBundles(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  sources: (SourceCredit & { id: string })[],
+) {
+  return Promise.all(
+    sources.map(async (s) => {
+      const { data: row } = await supabase
+        .from("studio_sources")
+        .select("summary_en, summary_zh, text_content")
+        .eq("id", s.id)
+        .single();
+      return {
+        author: s.author,
+        title: s.title,
+        url: s.url,
+        summaryEn: (row?.summary_en as { summary?: string })?.summary ?? "",
+        summaryZh: (row?.summary_zh as { summary?: string })?.summary ?? "",
+        fullText: (row?.text_content as string) ?? "",
+      };
+    }),
+  );
 }

@@ -1,4 +1,5 @@
 import { PostEditor } from "@/components/studio/post-editor";
+import type { PostVariantRecord } from "@/lib/studio/channels";
 import { createClient } from "@/lib/supabase/server";
 import { notFound } from "next/navigation";
 
@@ -30,7 +31,7 @@ export default async function StudioPostPage({
 
   const { data: suggestions } = await supabase
     .from("studio_suggestions")
-    .select("id, paragraph, source_id, label")
+    .select("id, paragraph, source_id, label, channel")
     .eq("post_id", id)
     .eq("status", "pending");
 
@@ -39,6 +40,21 @@ export default async function StudioPostPage({
     .select("id, body, resolved, created_at")
     .eq("post_id", id)
     .order("created_at", { ascending: true });
+
+  const { data: variantRows } = await supabase
+    .from("studio_post_variants")
+    .select("channel, content, extra")
+    .eq("post_id", id);
+
+  const variants: Partial<Record<"x" | "threads" | "zh" | "en", PostVariantRecord>> = {};
+  for (const row of variantRows ?? []) {
+    const ch = row.channel as "x" | "threads" | "zh" | "en";
+    variants[ch] = {
+      channel: ch,
+      content: row.content as string,
+      extra: (row.extra as PostVariantRecord["extra"]) ?? {},
+    };
+  }
 
   const { data: versions } = await supabase
     .from("studio_post_versions")
@@ -78,8 +94,10 @@ export default async function StudioPostPage({
         paragraph: s.paragraph,
         source_id: s.source_id,
         label: s.label ?? undefined,
+        channel: (s.channel as import("@/lib/studio/channels").StudioChannel) ?? "blog",
       }))}
       comments={comments ?? []}
+      variants={variants}
       versions={versions ?? []}
     />
   );

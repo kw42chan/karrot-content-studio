@@ -3,6 +3,7 @@ import {
   DEMO_POST,
   DEMO_SOURCES,
   DEMO_SUGGESTION,
+  DEMO_VARIANTS,
 } from "@/lib/demo/content";
 
 export default function DemoStudioPage() {
@@ -11,9 +12,11 @@ export default function DemoStudioPage() {
       demoMode
       post={DEMO_POST}
       sources={DEMO_SOURCES}
+      variants={DEMO_VARIANTS}
       suggestions={[
         {
           ...DEMO_SUGGESTION,
+          channel: "blog",
           label: "Suggested from a new source · AYi tip on App Store payments",
         },
       ]}

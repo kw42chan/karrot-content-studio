@@ -43,6 +43,7 @@ supabase db push
 # Or run SQL manually in the SQL editor:
 # supabase/migrations/20261005080000_studio_tables.sql
 # supabase/migrations/20261005090000_studio_comments.sql
+# supabase/migrations/20261005100000_studio_post_variants.sql
 ```
 
 **Important**

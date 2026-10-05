@@ -225,11 +225,18 @@ body {
   background: transparent;
 }
 
+.studio-tabs-sticky {
+  position: sticky;
+  top: 56px;
+  z-index: 15;
+  background: var(--studio-surface);
+  border-bottom: 1px solid var(--karrot-border);
+}
+
 .studio-tabs {
   display: flex;
   gap: 4px;
   padding: 0 24px;
-  border-bottom: 1px solid var(--karrot-border);
   overflow-x: auto;
 }
 
@@ -240,15 +247,15 @@ body {
   background: transparent;
   font-size: 14px;
   color: var(--karrot-muted);
-  border-bottom: 2px solid transparent;
-  margin-bottom: -1px;
-  cursor: default;
+  border-bottom: 3px solid transparent;
+  cursor: pointer;
 }
 
 .studio-tab-active {
   color: var(--karrot-accent);
   border-bottom-color: var(--karrot-accent);
   font-weight: 600;
+  background: rgba(209, 142, 99, 0.08);
 }
 
 .studio-block-label {

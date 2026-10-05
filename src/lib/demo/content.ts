@@ -101,6 +101,40 @@ export const DEMO_SUGGESTION: EditorSuggestion = {
   paragraph:
     "另外，用 App Store 付款而不是虛擬卡，可以減少帳號被判定為異常的機會。這點和 MagicPower 的網絡設定是分開的，兩者一起用會更穩。",
   source_id: "s2",
+  channel: "blog",
+};
+
+export const DEMO_VARIANTS = {
+  x: {
+    channel: "x" as const,
+    content:
+      "香港創作者把 Claude 封號當成系統工程：VPS、住宅 IP、裝置與付款要一齊設計，唔係換個 VPN 就搞掂。",
+    extra: { thread_parts: ["App Store 付款同網絡設定係兩條線，一齊做會穩陣啲。"] },
+  },
+  threads: {
+    channel: "threads" as const,
+    content:
+      "Claude 封鎖香港用戶唔係單因 VPN。MagicPower、AYi 同 BrewBytes 三篇文都指向同一個方向：整套環境要重設。",
+    extra: {},
+  },
+  zh: {
+    channel: "zh" as const,
+    content:
+      "Claude 封號：香港創作者實戰整理\n\n網絡、裝置、付款要一齊設計。想穩陣用 AI 做業務，可以同我傾下。",
+    extra: {
+      social_title: "Claude 封號：香港創作者實戰",
+      key_point: "香港創作者把網絡、裝置與付款當成一套系統，而不只是換 VPN。",
+    },
+  },
+  en: {
+    channel: "en" as const,
+    content:
+      "Claude bans: what HK creators are actually doing\n\nNetwork, device, and payment as one stack — not a VPN swap.",
+    extra: {
+      social_title: "Claude bans aren't a VPN switch",
+      key_point: "Hong Kong creators treat network, device, and payment as one stack.",
+    },
+  },
 };
 
 export const DEMO_PUBLIC_POST = {

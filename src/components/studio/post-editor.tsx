@@ -5,13 +5,22 @@ import {
   addSourceToPost,
   applyPostComments,
   draftPostWithAi,
+  generateVariantFromBlogAction,
   publishPostToKit,
   resolvePostComment,
   resolveSuggestion,
   restoreVersion,
   savePost,
+  saveVariant,
 } from "@/app/actions/studio";
 import { SourceCard } from "@/components/studio/source-card";
+import { VariantSuggestions } from "@/components/studio/variant-suggestions";
+import {
+  STUDIO_TABS,
+  type PostVariantRecord,
+  type StudioChannel,
+  type VariantExtra,
+} from "@/lib/studio/channels";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState, useTransition } from "react";
@@ -33,6 +42,7 @@ export type EditorSuggestion = {
   paragraph: string;
   source_id: string | null;
   label?: string;
+  channel?: StudioChannel;
 };
 
 export type EditorComment = {
@@ -62,32 +72,64 @@ export type EditorPost = {
   kit_broadcast_id: string | null;
 };
 
+type VariantState = Record<"x" | "threads" | "zh" | "en", PostVariantRecord>;
+
+function buildInitialVariants(
+  post: EditorPost,
+  fromDb: Partial<VariantState>,
+): VariantState {
+  return {
+    x: fromDb.x ?? { channel: "x", content: "", extra: { thread_parts: [] } },
+    threads: fromDb.threads ?? { channel: "threads", content: "", extra: {} },
+    zh: fromDb.zh ?? {
+      channel: "zh",
+      content: post.social_captions?.zh ?? "",
+      extra: {
+        social_title: post.social_title ?? post.title,
+        key_point: post.key_point ?? "",
+      },
+    },
+    en: fromDb.en ?? {
+      channel: "en",
+      content: post.social_captions?.en ?? "",
+      extra: {
+        social_title: post.social_title ?? post.title,
+        key_point: post.key_point ?? "",
+      },
+    },
+  };
+}
+
 export function PostEditor({
   post,
   sources,
   suggestions,
   comments: initialComments,
+  variants: initialVariantsFromDb,
   versions,
   demoMode = false,
+  initialTab = "blog",
 }: {
   post: EditorPost;
   sources: EditorSource[];
   suggestions: EditorSuggestion[];
   comments: EditorComment[];
+  variants: Partial<VariantState>;
   versions: EditorVersion[];
   demoMode?: boolean;
+  initialTab?: StudioChannel;
 }) {
   const router = useRouter();
   const [pending, start] = useTransition();
+  const [activeTab, setActiveTab] = useState<StudioChannel>(initialTab);
   const [title, setTitle] = useState(post.title);
   const [slug, setSlug] = useState(post.slug);
   const [myTake, setMyTake] = useState(post.my_take);
   const [body, setBody] = useState(post.body);
   const [lang, setLang] = useState(post.body_language);
-  const [keyPoint, setKeyPoint] = useState(post.key_point ?? "");
-  const [socialTitle, setSocialTitle] = useState(post.social_title ?? post.title);
-  const [socialZh, setSocialZh] = useState(post.social_captions?.zh ?? "");
-  const [socialEn, setSocialEn] = useState(post.social_captions?.en ?? "");
+  const [variants, setVariants] = useState<VariantState>(() =>
+    buildInitialVariants(post, initialVariantsFromDb),
+  );
   const [linkInput, setLinkInput] = useState("");
   const [commentInput, setCommentInput] = useState("");
   const [comments, setComments] = useState(initialComments);
@@ -101,18 +143,33 @@ export function PostEditor({
   useEffect(() => {
     setLocalSuggestions(suggestions);
   }, [suggestions]);
-
   useEffect(() => {
     setComments(initialComments);
   }, [initialComments]);
 
+  useEffect(() => {
+    setVariants(buildInitialVariants(post, initialVariantsFromDb));
+  }, [initialVariantsFromDb, post]);
+
   const bodyDisplay = useMemo(() => stripSourcesForEditor(body), [body]);
   const creditsBlock = useMemo(() => extractSourcesBlock(body), [body]);
 
-  const socialTitleEnc = encodeURIComponent(socialTitle || title);
-  const socialKeyEnc = encodeURIComponent(keyPoint);
+  const tabSuggestions = useMemo(
+    () => localSuggestions.filter((s) => (s.channel ?? "blog") === activeTab),
+    [localSuggestions, activeTab],
+  );
+
+  const ogTitle =
+    activeTab === "zh" || activeTab === "en"
+      ? variants[activeTab].extra.social_title ?? title
+      : variants.zh.extra.social_title ?? title;
+  const ogKey =
+    activeTab === "zh" || activeTab === "en"
+      ? variants[activeTab].extra.key_point ?? ""
+      : variants.zh.extra.key_point ?? "";
+  const socialTitleEnc = encodeURIComponent(ogTitle);
+  const socialKeyEnc = encodeURIComponent(ogKey);
   const squareOg = `/api/og/social?title=${socialTitleEnc}&keyPoint=${socialKeyEnc}&format=square&v=${ogTick}`;
-  const portraitOg = `/api/og/social?title=${socialTitleEnc}&keyPoint=${socialKeyEnc}&format=portrait&v=${ogTick}`;
 
   function notify(text: string, isError = false) {
     setMessage(text);
@@ -135,33 +192,69 @@ export function PostEditor({
     });
   }
 
+  function updateVariant(
+    channel: "x" | "threads" | "zh" | "en",
+    patch: Partial<PostVariantRecord>,
+  ) {
+    setVariants((v) => ({
+      ...v,
+      [channel]: {
+        ...v[channel],
+        ...patch,
+        extra: { ...v[channel].extra, ...patch.extra },
+      },
+    }));
+    if (channel === "zh" || channel === "en") setOgTick((t) => t + 1);
+  }
+
   async function handleSave() {
     if (demoMode) {
       notify("Demo only — connect Supabase to save.", true);
       return;
     }
     start(async () => {
-      const result = await savePost({
-        id: post.id,
-        title,
-        slug,
-        my_take: myTake,
-        body,
-        body_language: lang,
-        status: post.status,
-        key_point: keyPoint,
-        social_title: socialTitle,
-        social_captions: { zh: socialZh, en: socialEn },
-      });
-      if (!result.ok) {
-        notify(result.error, true);
-        return;
+      if (activeTab === "blog") {
+        const result = await savePost({
+          id: post.id,
+          title,
+          slug,
+          my_take: myTake,
+          body,
+          body_language: lang,
+          status: post.status,
+          key_point: variants.zh.extra.key_point,
+          social_title: variants.zh.extra.social_title,
+          social_captions: { zh: variants.zh.content, en: variants.en.content },
+        });
+        if (!result.ok) {
+          notify(result.error, true);
+          return;
+        }
+      } else {
+        const ch = activeTab as "x" | "threads" | "zh" | "en";
+        const result = await saveVariant({
+          postId: post.id,
+          channel: ch,
+          content: variants[ch].content,
+          extra: variants[ch].extra,
+        });
+        if (!result.ok) {
+          notify(result.error, true);
+          return;
+        }
       }
-      setOgTick((t) => t + 1);
-      notify("Saved");
+      notify(`Saved ${STUDIO_TABS.find((t) => t.id === activeTab)?.label ?? activeTab}`);
       router.refresh();
     });
   }
+
+  function copyText(text: string) {
+    navigator.clipboard.writeText(text);
+    notify("Copied to clipboard");
+  }
+
+  const xChars = variants.x.content.length;
+  const threadsChars = variants.threads.content.length;
 
   return (
     <div className="studio-root">
@@ -181,13 +274,8 @@ export function PostEditor({
             >
               Preview
             </Link>
-            <button
-              type="button"
-              disabled={pending}
-              className="studio-btn studio-btn-ghost"
-              onClick={handleSave}
-            >
-              Save
+            <button type="button" disabled={pending} className="studio-btn studio-btn-ghost" onClick={handleSave}>
+              Save {STUDIO_TABS.find((t) => t.id === activeTab)?.label}
             </button>
             <button
               type="button"
@@ -242,11 +330,7 @@ export function PostEditor({
                 className="min-w-0 flex-1 rounded-lg border border-[var(--karrot-border)] px-2.5 py-2 text-sm"
                 disabled={demoMode}
               />
-              <button
-                type="submit"
-                className="studio-btn studio-btn-primary px-3"
-                disabled={demoMode}
-              >
+              <button type="submit" className="studio-btn studio-btn-primary px-3" disabled={demoMode}>
                 +
               </button>
             </form>
@@ -263,178 +347,245 @@ export function PostEditor({
             onChange={(e) => setTitle(e.target.value)}
             readOnly={demoMode}
           />
-          <div className="studio-tabs">
-            <button type="button" className="studio-tab studio-tab-active">Blog</button>
-            <button type="button" className="studio-tab">X post</button>
-            <button type="button" className="studio-tab">Threads</button>
-            <button type="button" className="studio-tab">中文</button>
-            <button type="button" className="studio-tab">English</button>
-          </div>
-          <div className="p-6">
-            <div className="mb-6">
-              <h3 className="studio-block-label">My take</h3>
-              <div className="studio-mytake">
-                <textarea
-                  value={myTake}
-                  onChange={(e) => setMyTake(e.target.value)}
-                  readOnly={demoMode}
-                />
-              </div>
-            </div>
-            <div>
-              <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-[var(--karrot-muted)]">
-                Draft from sources
-              </h3>
-              <div className="studio-draft-area rounded-xl border border-[var(--karrot-border)] bg-[var(--karrot-bg)]/40 p-3">
-                <textarea
-                  value={bodyDisplay}
-                  onChange={(e) => setBody(mergeBodyWithSources(e.target.value, body))}
-                  rows={14}
-                  readOnly={demoMode}
-                  className="min-h-[280px]"
-                />
-              </div>
-              {localSuggestions.map((sug) => (
-                <div key={sug.id} className="studio-suggest">
-                  <p className="mb-2 text-xs font-semibold text-[var(--karrot-accent)]">
-                    {sug.label ?? "Suggested from a new source"}
-                  </p>
-                  <p className="mb-3 text-sm leading-relaxed text-[var(--karrot-muted)]">
-                    {sug.paragraph}
-                  </p>
-                  <div className="flex flex-wrap gap-2">
-                    <button
-                      type="button"
-                      className="studio-btn studio-btn-primary h-8 px-3 text-xs"
-                      onClick={() => {
-                        if (demoMode) {
-                          setLocalSuggestions((s) => s.filter((x) => x.id !== sug.id));
-                          return;
-                        }
-                        run(() => resolveSuggestion(sug.id, "accept"));
-                      }}
-                    >
-                      Accept
-                    </button>
-                    <button
-                      type="button"
-                      className="studio-btn studio-btn-ghost h-8 px-3 text-xs"
-                      onClick={() => {
-                        const edited = window.prompt("Edit before accepting:", sug.paragraph);
-                        if (!edited) return;
-                        if (demoMode) {
-                          setLocalSuggestions((s) => s.filter((x) => x.id !== sug.id));
-                          return;
-                        }
-                        run(() => resolveSuggestion(sug.id, "accept", edited));
-                      }}
-                    >
-                      Edit first
-                    </button>
-                    <button
-                      type="button"
-                      className="studio-btn studio-btn-ghost h-8 px-3 text-xs"
-                      onClick={() => {
-                        if (demoMode) {
-                          setLocalSuggestions((s) => s.filter((x) => x.id !== sug.id));
-                          return;
-                        }
-                        run(() => resolveSuggestion(sug.id, "dismiss"));
-                      }}
-                    >
-                      Dismiss
-                    </button>
-                  </div>
-                </div>
+          <div className="studio-tabs-sticky">
+            <div className="studio-tabs">
+              {STUDIO_TABS.map((tab) => (
+                <button
+                  key={tab.id}
+                  type="button"
+                  className={`studio-tab ${activeTab === tab.id ? "studio-tab-active" : ""}`}
+                  onClick={() => setActiveTab(tab.id)}
+                >
+                  {tab.label}
+                </button>
               ))}
             </div>
-            {creditsBlock && (
-              <div className="studio-credits">
-                <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide">Sources</h3>
-                <div className="whitespace-pre-wrap text-sm">{creditsBlock}</div>
-              </div>
-            )}
+          </div>
 
-            <section className="mt-8 rounded-xl border border-[var(--karrot-border)] bg-[var(--karrot-card)] p-5">
-              <h3 className="studio-block-label">Comments on this draft</h3>
-              <p className="mb-3 text-xs text-[var(--karrot-muted)]">
-                Notes for yourself or instructions for AI. Apply sends open comments as a suggestion
-                — My take is never changed automatically.
-              </p>
-              <ul className="mb-4 space-y-2">
-                {comments.map((c) => (
-                  <li
-                    key={c.id}
-                    className={`rounded-lg border px-3 py-2 text-sm ${
-                      c.resolved
-                        ? "border-transparent bg-white/50 opacity-60"
-                        : "border-[var(--karrot-border)] bg-white"
-                    }`}
+          <div className="p-6">
+            {activeTab === "blog" && (
+              <>
+                <div className="mb-6">
+                  <h3 className="studio-block-label">My take</h3>
+                  <div className="studio-mytake">
+                    <textarea
+                      value={myTake}
+                      onChange={(e) => setMyTake(e.target.value)}
+                      readOnly={demoMode}
+                    />
+                  </div>
+                </div>
+                <div>
+                  <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-[var(--karrot-muted)]">
+                    Draft from sources
+                  </h3>
+                  <div className="studio-draft-area rounded-xl border border-[var(--karrot-border)] bg-[var(--karrot-bg)]/40 p-3">
+                    <textarea
+                      value={bodyDisplay}
+                      onChange={(e) => setBody(mergeBodyWithSources(e.target.value, body))}
+                      rows={14}
+                      readOnly={demoMode}
+                      className="min-h-[280px]"
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    className="mt-2 text-xs font-semibold text-[var(--karrot-accent)]"
+                    onClick={() => copyText(bodyDisplay)}
                   >
-                    <p>{c.body}</p>
-                    <div className="mt-1 flex items-center justify-between text-[11px] text-[var(--karrot-muted)]">
-                      <span>{new Date(c.created_at).toLocaleString()}</span>
-                      {c.resolved ? (
-                        <span>Resolved</span>
-                      ) : (
-                        <button
-                          type="button"
-                          className="font-semibold text-[var(--karrot-accent)]"
-                          onClick={() =>
-                            run(async () => {
-                              await resolvePostComment(c.id);
-                              notify("Comment resolved");
-                            })
-                          }
-                        >
-                          Mark resolved
-                        </button>
-                      )}
-                    </div>
-                  </li>
-                ))}
-                {!comments.length && (
-                  <li className="text-sm text-[var(--karrot-muted)]">No comments yet.</li>
+                    Copy blog body
+                  </button>
+                </div>
+                <VariantSuggestions
+                  suggestions={tabSuggestions}
+                  demoMode={demoMode}
+                  onAccept={(id) => run(() => resolveSuggestion(id, "accept"))}
+                  onEdit={(id, text) => run(() => resolveSuggestion(id, "accept", text))}
+                  onDismiss={(id) => run(() => resolveSuggestion(id, "dismiss"))}
+                />
+                {creditsBlock && (
+                  <div className="studio-credits">
+                    <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide">Sources</h3>
+                    <div className="whitespace-pre-wrap text-sm">{creditsBlock}</div>
+                  </div>
                 )}
-              </ul>
-              <textarea
-                value={commentInput}
-                onChange={(e) => setCommentInput(e.target.value)}
-                rows={3}
-                placeholder="Add a comment or instruction…"
-                className="mb-2 w-full rounded-lg border border-[var(--karrot-border)] p-2 text-sm"
-                disabled={demoMode}
-              />
-              <div className="flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  className="studio-btn studio-btn-ghost h-8 text-xs"
-                  disabled={demoMode || !commentInput.trim()}
-                  onClick={() =>
+                <CommentsSection
+                  comments={comments}
+                  commentInput={commentInput}
+                  setCommentInput={setCommentInput}
+                  demoMode={demoMode}
+                  onAdd={() =>
                     run(async () => {
                       await addPostComment(post.id, commentInput);
                       setCommentInput("");
                       notify("Comment added");
                     })
                   }
-                >
-                  Add comment
+                  onResolve={(id) =>
+                    run(async () => {
+                      await resolvePostComment(id);
+                      notify("Comment resolved");
+                    })
+                  }
+                  onApply={() =>
+                    run(async () => {
+                      await applyPostComments(post.id, activeTab);
+                      notify("Applied comments — review the suggestion");
+                    })
+                  }
+                />
+              </>
+            )}
+
+            {activeTab === "x" && (
+              <div>
+                <h3 className="studio-block-label">X post</h3>
+                <textarea
+                  className="w-full rounded-xl border border-[var(--karrot-border)] p-3 text-base leading-relaxed"
+                  rows={5}
+                  value={variants.x.content}
+                  onChange={(e) => updateVariant("x", { content: e.target.value })}
+                />
+                <p className={`mt-1 text-xs ${xChars > 280 ? "font-semibold text-red-700" : "text-[var(--karrot-muted)]"}`}>
+                  {xChars} / 280 characters
+                </p>
+                <button type="button" className="mt-2 text-xs font-semibold text-[var(--karrot-accent)]" onClick={() => copyText(variants.x.content)}>
+                  Copy X post
                 </button>
+                <p className="mt-4 text-xs font-semibold text-[var(--karrot-muted)]">Thread (optional)</p>
+                {(variants.x.extra.thread_parts ?? []).map((part, i) => (
+                  <textarea
+                    key={i}
+                    className="mb-2 w-full rounded-lg border border-[var(--karrot-border)] p-2 text-sm"
+                    rows={2}
+                    value={part}
+                    onChange={(e) => {
+                      const parts = [...(variants.x.extra.thread_parts ?? [])];
+                      parts[i] = e.target.value;
+                      updateVariant("x", { extra: { thread_parts: parts } });
+                    }}
+                  />
+                ))}
                 <button
                   type="button"
-                  className="studio-btn studio-btn-primary h-8 text-xs"
-                  disabled={demoMode}
+                  className="studio-btn studio-btn-ghost mt-1 h-8 text-xs"
                   onClick={() =>
-                    run(async () => {
-                      await applyPostComments(post.id);
-                      notify("Applied comments — review the suggestion above");
+                    updateVariant("x", {
+                      extra: { thread_parts: [...(variants.x.extra.thread_parts ?? []), ""] },
                     })
                   }
                 >
-                  Apply comments
+                  Add thread tweet
+                </button>
+                <VariantSuggestions
+                  suggestions={tabSuggestions}
+                  demoMode={demoMode}
+                  onAccept={(id) => run(() => resolveSuggestion(id, "accept"))}
+                  onEdit={(id, text) => run(() => resolveSuggestion(id, "accept", text))}
+                  onDismiss={(id) => run(() => resolveSuggestion(id, "dismiss"))}
+                />
+                <div className="mt-4 flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    className="studio-btn studio-btn-primary h-8 text-xs"
+                    onClick={() => run(() => generateVariantFromBlogAction(post.id, "x"))}
+                  >
+                    Generate from blog
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {activeTab === "threads" && (
+              <div>
+                <h3 className="studio-block-label">Threads post</h3>
+                <textarea
+                  className="w-full rounded-xl border border-[var(--karrot-border)] p-3 text-base leading-relaxed"
+                  rows={8}
+                  value={variants.threads.content}
+                  onChange={(e) => updateVariant("threads", { content: e.target.value })}
+                />
+                <p className={`mt-1 text-xs ${threadsChars > 500 ? "font-semibold text-red-700" : "text-[var(--karrot-muted)]"}`}>
+                  {threadsChars} / 500 characters
+                </p>
+                <button type="button" className="mt-2 text-xs font-semibold text-[var(--karrot-accent)]" onClick={() => copyText(variants.threads.content)}>
+                  Copy Threads post
+                </button>
+                <VariantSuggestions
+                  suggestions={tabSuggestions}
+                  demoMode={demoMode}
+                  onAccept={(id) => run(() => resolveSuggestion(id, "accept"))}
+                  onEdit={(id, text) => run(() => resolveSuggestion(id, "accept", text))}
+                  onDismiss={(id) => run(() => resolveSuggestion(id, "dismiss"))}
+                />
+                <button
+                  type="button"
+                  className="studio-btn studio-btn-primary mt-4 h-8 text-xs"
+                  onClick={() => run(() => generateVariantFromBlogAction(post.id, "threads"))}
+                >
+                  Generate from blog
                 </button>
               </div>
-            </section>
+            )}
+
+            {(activeTab === "zh" || activeTab === "en") && (
+              <div>
+                <h3 className="studio-block-label">
+                  {activeTab === "zh" ? "Instagram / Facebook · 中文" : "Instagram / Facebook · English"}
+                </h3>
+                <label className="studio-field">
+                  Image headline (Anton)
+                  <input
+                    value={variants[activeTab].extra.social_title ?? ""}
+                    onChange={(e) =>
+                      updateVariant(activeTab, { extra: { social_title: e.target.value } })
+                    }
+                  />
+                </label>
+                <label className="studio-field">
+                  Key point (Roboto)
+                  <input
+                    value={variants[activeTab].extra.key_point ?? ""}
+                    onChange={(e) =>
+                      updateVariant(activeTab, { extra: { key_point: e.target.value } })
+                    }
+                  />
+                </label>
+                <label className="mb-1 mt-3 block text-xs font-semibold text-[var(--karrot-muted)]">
+                  Caption
+                </label>
+                <textarea
+                  rows={6}
+                  className="w-full rounded-lg border border-[var(--karrot-border)] p-3 text-sm leading-relaxed"
+                  value={variants[activeTab].content}
+                  onChange={(e) => updateVariant(activeTab, { content: e.target.value })}
+                />
+                <button
+                  type="button"
+                  className="mt-2 text-xs font-semibold text-[var(--karrot-accent)]"
+                  onClick={() => copyText(variants[activeTab].content)}
+                >
+                  Copy caption
+                </button>
+                <div className="mt-4 overflow-hidden rounded-lg border border-[var(--karrot-border)]">
+                  <img src={squareOg} alt="Social preview" className="w-full" />
+                </div>
+                <VariantSuggestions
+                  suggestions={tabSuggestions}
+                  demoMode={demoMode}
+                  onAccept={(id) => run(() => resolveSuggestion(id, "accept"))}
+                  onEdit={(id, text) => run(() => resolveSuggestion(id, "accept", text))}
+                  onDismiss={(id) => run(() => resolveSuggestion(id, "dismiss"))}
+                />
+                <button
+                  type="button"
+                  className="studio-btn studio-btn-primary mt-4 h-8 text-xs"
+                  onClick={() => run(() => generateVariantFromBlogAction(post.id, activeTab))}
+                >
+                  Generate from blog
+                </button>
+              </div>
+            )}
           </div>
         </main>
 
@@ -477,85 +628,23 @@ export function PostEditor({
                 I confirm sending this to my email list
               </label>
             )}
-            <div>
-              <p className="mb-2 text-xs font-semibold text-[var(--karrot-muted)]">Social formats</p>
-              <label className="studio-field">
-                Image headline (Anton)
-                <input
-                  value={socialTitle}
-                  onChange={(e) => {
-                    setSocialTitle(e.target.value);
-                    setOgTick((t) => t + 1);
-                  }}
-                />
-              </label>
-              <label className="studio-field">
-                Key point (Roboto)
-                <input
-                  value={keyPoint}
-                  onChange={(e) => {
-                    setKeyPoint(e.target.value);
-                    setOgTick((t) => t + 1);
-                  }}
-                />
-              </label>
-              <label className="mb-1 mt-2 block text-xs font-semibold text-[var(--karrot-muted)]">
-                中文 caption
-              </label>
-              <textarea
-                rows={3}
-                className="mb-1 w-full rounded-lg border border-[var(--karrot-border)] p-2 text-xs"
-                value={socialZh}
-                onChange={(e) => setSocialZh(e.target.value)}
-              />
-              <button
-                type="button"
-                className="text-xs font-semibold text-[var(--karrot-accent)]"
-                onClick={() => navigator.clipboard.writeText(socialZh)}
-              >
-                Copy 中文 caption
-              </button>
-              <label className="mb-1 mt-3 block text-xs font-semibold text-[var(--karrot-muted)]">
-                English caption
-              </label>
-              <textarea
-                rows={3}
-                className="mb-1 w-full rounded-lg border border-[var(--karrot-border)] p-2 text-xs"
-                value={socialEn}
-                onChange={(e) => setSocialEn(e.target.value)}
-              />
-              <button
-                type="button"
-                className="text-xs font-semibold text-[var(--karrot-accent)]"
-                onClick={() => navigator.clipboard.writeText(socialEn)}
-              >
-                Copy English caption
-              </button>
-              <div className="mt-3 overflow-hidden rounded-lg border border-[var(--karrot-border)]">
-                <img src={squareOg} alt="Social preview square" className="w-full" />
-              </div>
-              <div className="mt-2 flex flex-col gap-1 text-xs font-semibold text-[var(--karrot-accent)]">
-                <a href={squareOg} download="karrot-1080-square.png">Download 1080×1080</a>
-                <a href={portraitOg} download="karrot-1080x1350.png">Download 1080×1350</a>
-              </div>
-            </div>
             <div className="studio-ai-box">
               <p>
-                Draft a new section from the attached sources. Your My take and accepted edits stay
-                untouched.
+                Draft for the <strong>{STUDIO_TABS.find((t) => t.id === activeTab)?.label}</strong>{" "}
+                tab from attached sources. My take is never changed automatically.
               </p>
               <button
                 type="button"
                 disabled={pending}
                 className="studio-btn studio-btn-primary"
-                onClick={() => run(() => draftPostWithAi(post.id))}
+                onClick={() => run(() => draftPostWithAi(post.id, activeTab))}
               >
                 Draft from sources
               </button>
             </div>
             {versions.length > 0 && !demoMode && (
               <div>
-                <p className="mb-2 text-xs font-semibold">Versions</p>
+                <p className="mb-2 text-xs font-semibold">Blog versions</p>
                 <ul className="space-y-2 text-xs">
                   {versions.slice(0, 5).map((v) => (
                     <li key={v.id} className="flex justify-between gap-2">
@@ -579,6 +668,66 @@ export function PostEditor({
         </aside>
       </div>
     </div>
+  );
+}
+
+function CommentsSection({
+  comments,
+  commentInput,
+  setCommentInput,
+  demoMode,
+  onAdd,
+  onResolve,
+  onApply,
+}: {
+  comments: EditorComment[];
+  commentInput: string;
+  setCommentInput: (v: string) => void;
+  demoMode: boolean;
+  onAdd: () => void;
+  onResolve: (id: string) => void;
+  onApply: () => void;
+}) {
+  return (
+    <section className="mt-8 rounded-xl border border-[var(--karrot-border)] bg-[var(--karrot-card)] p-5">
+      <h3 className="studio-block-label">Comments on this draft</h3>
+      <ul className="mb-4 space-y-2">
+        {comments.map((c) => (
+          <li
+            key={c.id}
+            className={`rounded-lg border px-3 py-2 text-sm ${
+              c.resolved ? "opacity-60" : "border-[var(--karrot-border)] bg-white"
+            }`}
+          >
+            <p>{c.body}</p>
+            <div className="mt-1 flex justify-between text-[11px] text-[var(--karrot-muted)]">
+              <span>{new Date(c.created_at).toLocaleString()}</span>
+              {!c.resolved && (
+                <button type="button" className="font-semibold text-[var(--karrot-accent)]" onClick={() => onResolve(c.id)}>
+                  Mark resolved
+                </button>
+              )}
+            </div>
+          </li>
+        ))}
+      </ul>
+      <textarea
+        value={commentInput}
+        onChange={(e) => setCommentInput(e.target.value)}
+        rows={3}
+        placeholder="Add a comment…"
+        className="mb-2 w-full rounded-lg border border-[var(--karrot-border)] p-2 text-sm"
+        disabled={demoMode}
+      />
+      <div className="flex flex-wrap gap-2">
+        <button type="button" className="studio-btn studio-btn-ghost h-8 text-xs" disabled={demoMode || !commentInput.trim()} onClick={onAdd}>
+          Add comment
+        </button>
+        <button type="button" className="studio-btn studio-btn-primary h-8 text-xs" disabled={demoMode} onClick={onApply}>
+          Apply comments
+        </button>
+      </div>
+    </section>
   );
 }
 
