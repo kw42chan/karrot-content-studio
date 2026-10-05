@@ -4,7 +4,7 @@ import Link from "next/link";
 export default async function PostsIndexPage() {
   const supabase = await createClient();
   const { data: posts } = await supabase
-    .from("posts")
+    .from("studio_posts")
     .select("title, slug, published_at, my_take")
     .eq("status", "published")
     .order("published_at", { ascending: false });

@@ -22,7 +22,6 @@ export async function createClient() {
           }
         },
       },
-      db: { schema: "studio" },
     },
   );
 }

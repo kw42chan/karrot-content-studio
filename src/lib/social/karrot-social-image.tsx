@@ -15,7 +15,8 @@ export function KarrotSocialImage({
 }: SocialImageProps): ReactNode {
   const headerPct = height === 1080 ? 0.15 : 0.16;
   const headerH = Math.round(height * headerPct);
-  const titleSize = height === 1080 ? 132 : 140;
+  const titleSize = height === 1080 ? 104 : 112;
+  const keySize = height === 1080 ? 30 : 32;
 
   return (
     <div
@@ -33,7 +34,7 @@ export function KarrotSocialImage({
           height: headerH,
           background: "#a89081",
           color: "#FBF3EB",
-          padding: "14px",
+          padding: 14,
           display: "flex",
           flexDirection: "column",
           justifyContent: "space-between",
@@ -66,7 +67,7 @@ export function KarrotSocialImage({
             >
               KARROT DIGITAL
             </div>
-            <div style={{ fontSize: 13, opacity: 0.95 }}>
+            <div style={{ fontSize: 13, fontFamily: "Roboto" }}>
               Automating Business with Intelligent Tech
             </div>
           </div>
@@ -96,6 +97,8 @@ export function KarrotSocialImage({
             lineHeight: 1.05,
             color: "#000",
             marginBottom: 16,
+            display: "flex",
+            flexWrap: "wrap",
           }}
         >
           {title}
@@ -110,9 +113,11 @@ export function KarrotSocialImage({
         />
         <div
           style={{
-            fontSize: height === 1080 ? 30 : 32,
+            fontFamily: "Roboto",
+            fontSize: keySize,
             lineHeight: 1.45,
             color: "#000",
+            display: "flex",
           }}
         >
           {keyPoint}
@@ -125,6 +130,7 @@ export function KarrotSocialImage({
           display: "flex",
           justifyContent: "space-between",
           fontSize: 22,
+          fontFamily: "Roboto",
           fontWeight: 700,
         }}
       >

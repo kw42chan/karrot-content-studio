@@ -31,7 +31,7 @@ export async function addSourceToPost(postId: string, rawUrl: string) {
   const { normalizedUrl, platform, result } = await readSourceFromUrl(rawUrl);
 
   const { data: existing } = await supabase
-    .from("sources")
+    .from("studio_sources")
     .select("*")
     .eq("url_normalized", normalizedUrl)
     .maybeSingle();
@@ -43,7 +43,7 @@ export async function addSourceToPost(postId: string, rawUrl: string) {
   if (!existing) {
     const bilingual = await summarizeSource(normalizedUrl, result.text, result.title);
     const { data: inserted, error } = await supabase
-      .from("sources")
+      .from("studio_sources")
       .insert({
         url: result.url,
         url_normalized: normalizedUrl,
@@ -65,7 +65,7 @@ export async function addSourceToPost(postId: string, rawUrl: string) {
   }
 
   const { data: linkExists } = await supabase
-    .from("post_sources")
+    .from("studio_post_sources")
     .select("post_id")
     .eq("post_id", postId)
     .eq("source_id", sourceId!)
@@ -75,10 +75,10 @@ export async function addSourceToPost(postId: string, rawUrl: string) {
 
   if (isNewLink) {
     const { count } = await supabase
-      .from("post_sources")
+      .from("studio_post_sources")
       .select("*", { count: "exact", head: true })
       .eq("post_id", postId);
-    await supabase.from("post_sources").insert({
+    await supabase.from("studio_post_sources").insert({
       post_id: postId,
       source_id: sourceId!,
       position: count ?? 0,
@@ -86,7 +86,7 @@ export async function addSourceToPost(postId: string, rawUrl: string) {
   }
 
   const { data: post } = await supabase
-    .from("posts")
+    .from("studio_posts")
     .select("title, body, body_language")
     .eq("id", postId)
     .single();
@@ -101,7 +101,7 @@ export async function addSourceToPost(postId: string, rawUrl: string) {
           : JSON.stringify(summaryEn),
       language: post.body_language as "zh-HK" | "en",
     });
-    await supabase.from("post_suggestions").insert({
+    await supabase.from("studio_suggestions").insert({
       post_id: postId,
       source_id: sourceId!,
       paragraph,
@@ -117,7 +117,7 @@ export async function createPost() {
   const supabase = await requireAdmin();
   const slug = `draft-${Date.now()}`;
   const { data, error } = await supabase
-    .from("posts")
+    .from("studio_posts")
     .insert({ title: "Untitled draft", slug, status: "draft" })
     .select("id")
     .single();
@@ -144,7 +144,7 @@ export async function savePost(input: {
   const bodyWithSources = appendSourcesToBody(input.body, sourcesMd);
 
   const { error } = await supabase
-    .from("posts")
+    .from("studio_posts")
     .update({
       title: input.title,
       slug: input.slug || slugify(input.title),
@@ -160,7 +160,7 @@ export async function savePost(input: {
 
   if (error) throw new Error(error.message);
 
-  await supabase.from("post_versions").insert({
+  await supabase.from("studio_post_versions").insert({
     post_id: input.id,
     title: input.title,
     my_take: input.my_take,
@@ -174,7 +174,7 @@ export async function savePost(input: {
 
 export async function draftPostWithAi(postId: string) {
   const supabase = await requireAdmin();
-  const { data: post } = await supabase.from("posts").select("*").eq("id", postId).single();
+  const { data: post } = await supabase.from("studio_posts").select("*").eq("id", postId).single();
   if (!post) throw new Error("Post not found");
 
   const sources = await loadPostSources(supabase, postId);
@@ -183,7 +183,7 @@ export async function draftPostWithAi(postId: string) {
   const summaries = await Promise.all(
     sources.map(async (s) => {
       const { data: row } = await supabase
-        .from("sources")
+        .from("studio_sources")
         .select("summary_en, summary_zh")
         .eq("id", s.id)
         .single();
@@ -208,7 +208,7 @@ export async function draftPostWithAi(postId: string) {
   const body = appendSourcesToBody(drafted.body, sourcesMd);
 
   await supabase
-    .from("posts")
+    .from("studio_posts")
     .update({
       body,
       key_point: drafted.keyPoint,
@@ -216,7 +216,7 @@ export async function draftPostWithAi(postId: string) {
     })
     .eq("id", postId);
 
-  await supabase.from("post_versions").insert({
+  await supabase.from("studio_post_versions").insert({
     post_id: postId,
     title: post.title,
     my_take: post.my_take,
@@ -234,7 +234,7 @@ export async function resolveSuggestion(
 ) {
   const supabase = await requireAdmin();
   const { data: sug } = await supabase
-    .from("post_suggestions")
+    .from("studio_suggestions")
     .select("*")
     .eq("id", suggestionId)
     .single();
@@ -242,7 +242,7 @@ export async function resolveSuggestion(
 
   if (action === "dismiss") {
     await supabase
-      .from("post_suggestions")
+      .from("studio_suggestions")
       .update({ status: "dismissed" })
       .eq("id", suggestionId);
     revalidatePath(`/studio/posts/${sug.post_id}`);
@@ -250,7 +250,7 @@ export async function resolveSuggestion(
   }
 
   const { data: post } = await supabase
-    .from("posts")
+    .from("studio_posts")
     .select("body, my_take, title, body_language")
     .eq("id", sug.post_id)
     .single();
@@ -266,15 +266,15 @@ export async function resolveSuggestion(
   }
 
   await supabase
-    .from("posts")
+    .from("studio_posts")
     .update({ body: newBody })
     .eq("id", sug.post_id);
   await supabase
-    .from("post_suggestions")
+    .from("studio_suggestions")
     .update({ status: editedText ? "edited" : "accepted" })
     .eq("id", suggestionId);
 
-  await supabase.from("post_versions").insert({
+  await supabase.from("studio_post_versions").insert({
     post_id: sug.post_id,
     title: post.title,
     my_take: post.my_take,
@@ -291,7 +291,7 @@ export async function publishPostToKit(
   confirmEmail: boolean,
 ) {
   const supabase = await requireAdmin();
-  const { data: post } = await supabase.from("posts").select("*").eq("id", postId).single();
+  const { data: post } = await supabase.from("studio_posts").select("*").eq("id", postId).single();
   if (!post) throw new Error("Post not found");
 
   const sources = await loadPostSources(supabase, postId);
@@ -311,7 +311,7 @@ export async function publishPostToKit(
   });
 
   await supabase
-    .from("posts")
+    .from("studio_posts")
     .update({
       kit_broadcast_id: broadcastId,
       status: "published",
@@ -327,14 +327,14 @@ export async function publishPostToKit(
 export async function restoreVersion(versionId: string) {
   const supabase = await requireAdmin();
   const { data: version } = await supabase
-    .from("post_versions")
+    .from("studio_post_versions")
     .select("*")
     .eq("id", versionId)
     .single();
   if (!version) throw new Error("Version not found");
 
   await supabase
-    .from("posts")
+    .from("studio_posts")
     .update({
       title: version.title,
       my_take: version.my_take,
@@ -351,7 +351,7 @@ async function loadPostSources(
   postId: string,
 ): Promise<(SourceCredit & { id: string })[]> {
   const { data: links } = await supabase
-    .from("post_sources")
+    .from("studio_post_sources")
     .select("source_id, position")
     .eq("post_id", postId)
     .order("position");
@@ -359,7 +359,7 @@ async function loadPostSources(
   if (!links?.length) return [];
 
   const ids = links.map((l) => l.source_id);
-  const { data: sources } = await supabase.from("sources").select("*").in("id", ids);
+  const { data: sources } = await supabase.from("studio_sources").select("*").in("id", ids);
   const byId = new Map((sources ?? []).map((s) => [s.id, s]));
 
   return links

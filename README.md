@@ -5,7 +5,7 @@ Private content-marketing CMS for [Karrot Digital](https://karrotdigital.com). P
 ## Stack
 
 - **Next.js** (App Router, TypeScript) on Vercel
-- **Supabase** (existing project `gmfzwuunaqzutbhudsxn`) — all tables in the `studio` schema
+- **Supabase** (existing project `gmfzwuunaqzutbhudsxn`) — tables in `public` with `studio_` prefix
 - **OpenRouter** for AI (server-side only)
 - **Kit v4** for web/email publish
 
@@ -41,13 +41,12 @@ Apply migrations in order:
 # Example with Supabase CLI linked to your project
 supabase db push
 # Or run SQL manually in the SQL editor:
-# supabase/migrations/20251005070000_studio_schema.sql
+# supabase/migrations/20261005080000_studio_tables.sql
 ```
 
 **Important**
 
-- If `ADMIN_EMAIL` is not `darwin.chankawing@gmail.com`, edit `studio.admin_email()` in the migration before applying.
-- In Supabase Dashboard → **Project Settings → API**, add `studio` to **Exposed schemas** so the client can query `studio` tables.
+- If `ADMIN_EMAIL` is not `darwin.chankawing@gmail.com`, edit `public.studio_admin_email()` in the migration before applying.
 
 ### 4. Supabase Auth
 

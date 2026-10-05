@@ -10,18 +10,18 @@ export default async function StudioPostPage({
   const { id } = await params;
   const supabase = await createClient();
 
-  const { data: post } = await supabase.from("posts").select("*").eq("id", id).single();
+  const { data: post } = await supabase.from("studio_posts").select("*").eq("id", id).single();
   if (!post) notFound();
 
   const { data: links } = await supabase
-    .from("post_sources")
+    .from("studio_post_sources")
     .select("source_id, position")
     .eq("post_id", id)
     .order("position");
 
   const sourceIds = (links ?? []).map((l) => l.source_id);
   const { data: sources } = sourceIds.length
-    ? await supabase.from("sources").select("*").in("id", sourceIds)
+    ? await supabase.from("studio_sources").select("*").in("id", sourceIds)
     : { data: [] };
 
   const orderedSources = (links ?? [])
@@ -29,13 +29,13 @@ export default async function StudioPostPage({
     .filter(Boolean);
 
   const { data: suggestions } = await supabase
-    .from("post_suggestions")
+    .from("studio_suggestions")
     .select("id, paragraph, source_id")
     .eq("post_id", id)
     .eq("status", "pending");
 
   const { data: versions } = await supabase
-    .from("post_versions")
+    .from("studio_post_versions")
     .select("id, created_at, title")
     .eq("post_id", id)
     .order("created_at", { ascending: false })

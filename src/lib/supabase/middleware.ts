@@ -23,7 +23,6 @@ export async function updateSession(request: NextRequest) {
           );
         },
       },
-      db: { schema: "studio" },
     },
   );
 

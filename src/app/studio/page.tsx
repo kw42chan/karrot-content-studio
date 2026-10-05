@@ -6,7 +6,7 @@ import { redirect } from "next/navigation";
 export default async function StudioHomePage() {
   const supabase = await createClient();
   const { data: posts } = await supabase
-    .from("posts")
+    .from("studio_posts")
     .select("id, title, slug, status, updated_at")
     .order("updated_at", { ascending: false });
 

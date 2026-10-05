@@ -11,7 +11,7 @@ export default async function PublicPostPage({
   const supabase = await createClient();
 
   const { data: post } = await supabase
-    .from("posts")
+    .from("studio_posts")
     .select("*")
     .eq("slug", slug)
     .eq("status", "published")
@@ -20,14 +20,14 @@ export default async function PublicPostPage({
   if (!post) notFound();
 
   const { data: links } = await supabase
-    .from("post_sources")
+    .from("studio_post_sources")
     .select("source_id, position")
     .eq("post_id", post.id)
     .order("position");
 
   const ids = (links ?? []).map((l) => l.source_id);
   const { data: sources } = ids.length
-    ? await supabase.from("sources").select("id, author, title, url, platform").in("id", ids)
+    ? await supabase.from("studio_sources").select("id, author, title, url, platform").in("id", ids)
     : { data: [] };
 
   const byId = new Map((sources ?? []).map((s) => [s.id, s]));

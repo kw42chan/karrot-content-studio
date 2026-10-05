@@ -27,6 +27,7 @@ export type EditorSuggestion = {
   id: string;
   paragraph: string;
   source_id: string;
+  label?: string;
 };
 
 export type EditorVersion = {
@@ -53,11 +54,13 @@ export function PostEditor({
   sources,
   suggestions,
   versions,
+  demoMode = false,
 }: {
   post: EditorPost;
   sources: EditorSource[];
   suggestions: EditorSuggestion[];
   versions: EditorVersion[];
+  demoMode?: boolean;
 }) {
   const router = useRouter();
   const [pending, start] = useTransition();
@@ -70,8 +73,10 @@ export function PostEditor({
   const [message, setMessage] = useState<string | null>(null);
   const [publishMode, setPublishMode] = useState<"web_only" | "web_and_email">("web_only");
   const [confirmEmail, setConfirmEmail] = useState(false);
+  const [localSuggestions, setLocalSuggestions] = useState(suggestions);
 
   const bodyDisplay = useMemo(() => stripSourcesForEditor(body), [body]);
+  const creditsBlock = useMemo(() => extractSourcesBlock(body), [body]);
 
   const socialTitle = encodeURIComponent(title);
   const socialKey = encodeURIComponent(post.key_point ?? "");
@@ -79,6 +84,10 @@ export function PostEditor({
   const portraitOg = `/api/og/social?title=${socialTitle}&keyPoint=${socialKey}&format=portrait`;
 
   function run(fn: () => Promise<void>) {
+    if (demoMode) {
+      setMessage("Demo only — connect Supabase to save.");
+      return;
+    }
     start(async () => {
       try {
         setMessage(null);
@@ -91,27 +100,27 @@ export function PostEditor({
   }
 
   return (
-    <div className="min-h-screen bg-[var(--karrot-bg)]">
-      <header className="sticky top-0 z-20 border-b border-[var(--karrot-border)] bg-white/90 backdrop-blur-md">
-        <div className="mx-auto flex h-14 max-w-[1280px] items-center justify-between gap-4 px-6">
-          <div className="flex items-center gap-3 text-sm">
-            <Link href="/studio" className="font-semibold">Content Studio</Link>
-            <span className="text-[var(--karrot-muted)]">Posts /</span>
-            <span className="font-semibold truncate max-w-[200px] sm:max-w-md">{title}</span>
+    <div className="studio-root">
+      <header className="studio-top">
+        <div className="studio-top-inner">
+          <div className="studio-brand">Content Studio</div>
+          <div className="studio-crumb">
+            Posts / <strong>{title}</strong>
           </div>
-          <div className="flex items-center gap-2">
-            <span className="hidden sm:inline-flex items-center gap-1 rounded-full bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-800">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="studio-status">
               {post.status === "published" ? "Published" : "Draft"}
             </span>
             <Link
-              href={`/posts/${slug}`}
-              className="hidden sm:inline-flex h-9 items-center rounded-lg border border-[var(--karrot-border)] px-3 text-sm font-semibold"
+              href={demoMode ? "/demo/post" : `/posts/${slug}`}
+              className="studio-btn studio-btn-ghost hidden sm:inline-flex"
             >
               Preview
             </Link>
             <button
               type="button"
               disabled={pending}
+              className="studio-btn studio-btn-ghost"
               onClick={() =>
                 run(async () => {
                   await savePost({
@@ -128,26 +137,38 @@ export function PostEditor({
                   setMessage("Saved");
                 })
               }
-              className="h-9 rounded-lg border border-[var(--karrot-border)] px-3 text-sm font-semibold"
             >
               Save
+            </button>
+            <button
+              type="button"
+              className="studio-btn studio-btn-black"
+              onClick={() =>
+                run(async () => {
+                  await publishPostToKit(post.id, publishMode, confirmEmail);
+                  setMessage("Published to Kit");
+                })
+              }
+            >
+              Publish
             </button>
           </div>
         </div>
       </header>
 
       {message && (
-        <p className="mx-auto max-w-[1280px] px-6 pt-3 text-sm text-[var(--karrot-muted)]">{message}</p>
+        <p className="mx-auto max-w-[1320px] px-6 pt-3 text-sm text-[var(--karrot-muted)]">{message}</p>
       )}
 
-      <div className="mx-auto grid max-w-[1280px] grid-cols-1 gap-5 p-6 lg:grid-cols-[300px_minmax(0,1fr)_280px]">
-        {/* Sources */}
-        <aside className="rounded-2xl border border-[var(--karrot-border)] bg-white shadow-sm">
-          <div className="flex items-center justify-between border-b border-[var(--karrot-border)] px-5 py-4">
-            <h2 className="text-sm font-semibold">Sources</h2>
-            <span className="text-xs text-[var(--karrot-muted)]">{sources.length} attached</span>
+      <div className="studio-shell">
+        <aside className="studio-panel studio-sources-col">
+          <div className="studio-panel-h">
+            <span>Sources</span>
+            <span className="text-xs font-normal text-[var(--karrot-muted)]">
+              {sources.length} attached
+            </span>
           </div>
-          <div className="p-5">
+          <div className="studio-panel-b">
             <form
               className="mb-4 flex gap-2"
               onSubmit={(e) => {
@@ -164,82 +185,57 @@ export function PostEditor({
                 onChange={(e) => setLinkInput(e.target.value)}
                 placeholder="Paste X, Threads, or web link"
                 className="min-w-0 flex-1 rounded-lg border border-[var(--karrot-border)] px-2.5 py-2 text-sm"
+                disabled={demoMode}
               />
-              <button type="submit" className="rounded-lg bg-[var(--karrot-primary)] px-3 text-xs font-semibold text-white">
+              <button
+                type="submit"
+                className="studio-btn studio-btn-primary px-3"
+                disabled={demoMode}
+              >
                 +
               </button>
             </form>
             {sources.map((s) => (
-              <div key={s.id} className="mb-3 rounded-xl border border-[var(--karrot-border)] p-3">
-                <div className="mb-1 flex items-center gap-2">
-                  <span className="text-xs font-semibold truncate">{s.author ?? s.title ?? "Source"}</span>
-                </div>
-                <p className="line-clamp-2 text-xs text-[var(--karrot-muted)]">
-                  {s.summary_zh?.summary ?? s.summary_en?.summary}
+              <div key={s.id} className="studio-src">
+                <div className="studio-src-name">{s.author ?? s.title ?? "Source"}</div>
+                <p className="studio-src-oneliner">
+                  <span className="text-[11px] font-semibold text-[var(--karrot-accent)]">中文</span>{" "}
+                  {s.summary_zh?.summary}
                 </p>
-                <span
-                  className={`mt-2 inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold ${
-                    s.full_text ? "bg-emerald-50 text-emerald-800" : "bg-amber-50 text-amber-800"
-                  }`}
-                >
+                <p className="studio-src-oneliner">
+                  <span className="text-[11px] font-semibold text-[var(--karrot-muted)]">EN</span>{" "}
+                  {s.summary_en?.summary}
+                </p>
+                <span className={s.full_text ? "studio-badge-full" : "studio-badge-partial"}>
                   {s.full_text ? "Full article read" : "Opening section only"}
                 </span>
-                <div className="mt-3 grid gap-2 text-xs sm:grid-cols-2">
-                  <div>
-                    <p className="mb-1 font-semibold text-[var(--karrot-muted)]">中文</p>
-                    <p className="font-medium">{s.summary_zh?.headline}</p>
-                    <ul className="mt-1 list-disc pl-4 text-[var(--karrot-muted)]">
-                      {(s.summary_zh?.points ?? []).slice(0, 3).map((p) => (
-                        <li key={p}>{p}</li>
-                      ))}
-                    </ul>
-                  </div>
-                  <div>
-                    <p className="mb-1 font-semibold text-[var(--karrot-muted)]">English</p>
-                    <p className="font-medium">{s.summary_en?.headline}</p>
-                    <ul className="mt-1 list-disc pl-4 text-[var(--karrot-muted)]">
-                      {(s.summary_en?.points ?? []).slice(0, 3).map((p) => (
-                        <li key={p}>{p}</li>
-                      ))}
-                    </ul>
-                  </div>
-                </div>
               </div>
             ))}
           </div>
         </aside>
 
-        {/* Editor */}
-        <section className="min-h-[640px] rounded-2xl border border-[var(--karrot-border)] bg-white shadow-sm">
+        <main className="studio-panel studio-editor-col studio-editor-main">
           <input
+            className="studio-title-input"
             value={title}
             onChange={(e) => setTitle(e.target.value)}
-            className="w-full border-0 bg-transparent px-6 pt-6 text-2xl font-bold tracking-tight outline-none"
-            placeholder="Post title"
+            readOnly={demoMode}
           />
-          <div className="flex gap-1 border-b border-[var(--karrot-border)] px-6">
-            {(["Blog", "Social"] as const).map((tab) => (
-              <button
-                key={tab}
-                type="button"
-                className="border-b-2 border-transparent px-3 py-2 text-sm font-medium text-[var(--karrot-muted)]"
-              >
-                {tab}
-              </button>
-            ))}
+          <div className="studio-tabs">
+            <button type="button" className="studio-tab studio-tab-active">Blog</button>
+            <button type="button" className="studio-tab">X post</button>
+            <button type="button" className="studio-tab">Threads</button>
+            <button type="button" className="studio-tab">中文</button>
+            <button type="button" className="studio-tab">English</button>
           </div>
-          <div className="space-y-5 p-6">
-            <div>
-              <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-[var(--karrot-muted)]">
-                My take
-              </h3>
-              <div className="rounded-xl border border-indigo-200 bg-[var(--karrot-primary-soft)] p-4">
+          <div className="p-6">
+            <div className="mb-6">
+              <h3 className="studio-block-label">My take</h3>
+              <div className="studio-mytake">
                 <textarea
                   value={myTake}
                   onChange={(e) => setMyTake(e.target.value)}
-                  rows={4}
-                  className="w-full resize-y border-0 bg-transparent text-base leading-relaxed outline-none"
-                  placeholder="Your view — AI will never overwrite this."
+                  readOnly={demoMode}
                 />
               </div>
             </div>
@@ -247,185 +243,186 @@ export function PostEditor({
               <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-[var(--karrot-muted)]">
                 Draft from sources
               </h3>
-              <textarea
-                value={bodyDisplay}
-                onChange={(e) => setBody(mergeBodyWithSources(e.target.value, body))}
-                rows={14}
-                className="w-full rounded-xl border border-[var(--karrot-border)] p-4 text-base leading-relaxed"
-              />
-            </div>
-            {suggestions.map((sug) => (
-              <div
-                key={sug.id}
-                className="rounded-xl border border-dashed border-indigo-200 bg-indigo-50/40 p-4"
-              >
-                <p className="mb-2 text-xs font-semibold text-indigo-800">Suggested from a new source</p>
-                <p className="text-sm leading-relaxed">{sug.paragraph}</p>
-                <div className="mt-3 flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    className="rounded-lg bg-[var(--karrot-primary)] px-3 py-1.5 text-xs font-semibold text-white"
-                    onClick={() => run(() => resolveSuggestion(sug.id, "accept"))}
-                  >
-                    Accept
-                  </button>
-                  <button
-                    type="button"
-                    className="rounded-lg border border-[var(--karrot-border)] bg-white px-3 py-1.5 text-xs font-semibold"
-                    onClick={() => {
-                      const edited = window.prompt("Edit before accepting:", sug.paragraph);
-                      if (edited) run(() => resolveSuggestion(sug.id, "accept", edited));
-                    }}
-                  >
-                    Edit first
-                  </button>
-                  <button
-                    type="button"
-                    className="rounded-lg border border-[var(--karrot-border)] px-3 py-1.5 text-xs font-semibold"
-                    onClick={() => run(() => resolveSuggestion(sug.id, "dismiss"))}
-                  >
-                    Dismiss
-                  </button>
-                </div>
+              <div className="studio-draft-area">
+                <textarea
+                  value={bodyDisplay}
+                  onChange={(e) => setBody(mergeBodyWithSources(e.target.value, body))}
+                  rows={12}
+                  readOnly={demoMode}
+                />
               </div>
-            ))}
+              {localSuggestions.map((sug) => (
+                <div key={sug.id} className="studio-suggest">
+                  <p className="mb-2 text-xs font-semibold text-[var(--karrot-accent)]">
+                    {sug.label ?? "Suggested from a new source"}
+                  </p>
+                  <p className="mb-3 text-sm leading-relaxed text-[var(--karrot-muted)]">
+                    {sug.paragraph}
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      className="studio-btn studio-btn-primary h-8 px-3 text-xs"
+                      onClick={() => {
+                        if (demoMode) {
+                          setLocalSuggestions((s) => s.filter((x) => x.id !== sug.id));
+                          return;
+                        }
+                        run(() => resolveSuggestion(sug.id, "accept"));
+                      }}
+                    >
+                      Accept
+                    </button>
+                    <button
+                      type="button"
+                      className="studio-btn studio-btn-ghost h-8 px-3 text-xs"
+                      onClick={() => {
+                        const edited = window.prompt("Edit before accepting:", sug.paragraph);
+                        if (!edited) return;
+                        if (demoMode) {
+                          setLocalSuggestions((s) => s.filter((x) => x.id !== sug.id));
+                          return;
+                        }
+                        run(() => resolveSuggestion(sug.id, "accept", edited));
+                      }}
+                    >
+                      Edit first
+                    </button>
+                    <button
+                      type="button"
+                      className="studio-btn studio-btn-ghost h-8 px-3 text-xs"
+                      onClick={() => {
+                        if (demoMode) {
+                          setLocalSuggestions((s) => s.filter((x) => x.id !== sug.id));
+                          return;
+                        }
+                        run(() => resolveSuggestion(sug.id, "dismiss"));
+                      }}
+                    >
+                      Dismiss
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+            {creditsBlock && (
+              <div className="studio-credits">
+                <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide">Sources</h3>
+                <div className="whitespace-pre-wrap text-sm">{creditsBlock}</div>
+              </div>
+            )}
           </div>
-        </section>
+        </main>
 
-        {/* Settings */}
-        <aside className="space-y-5">
-          <div className="rounded-2xl border border-[var(--karrot-border)] bg-white p-5 shadow-sm">
-            <h2 className="text-sm font-semibold">Post settings</h2>
-            <label className="mt-4 block text-xs font-medium text-[var(--karrot-muted)]">
-              Body language
+        <aside className="studio-panel studio-aside-settings">
+          <div className="studio-panel-h">Post settings</div>
+          <div className="studio-panel-b flex flex-col gap-4">
+            <div className="studio-field">
+              <label>Body language</label>
               <select
                 value={lang}
                 onChange={(e) => setLang(e.target.value as "zh-HK" | "en")}
-                className="mt-1 w-full rounded-lg border border-[var(--karrot-border)] px-2 py-2 text-sm"
+                disabled={demoMode}
               >
                 <option value="zh-HK">中文</option>
                 <option value="en">English</option>
               </select>
-            </label>
-            <label className="mt-3 block text-xs font-medium text-[var(--karrot-muted)]">
-              URL slug
-              <input
-                value={slug}
-                onChange={(e) => setSlug(e.target.value)}
-                className="mt-1 w-full rounded-lg border border-[var(--karrot-border)] px-2 py-2 text-sm"
-              />
-            </label>
-            <div className="mt-5 rounded-xl bg-slate-50 p-4 text-sm text-[var(--karrot-muted)]">
-              Draft a new section from the attached sources. Your My take and expected edits stay untouched.
             </div>
-            <button
-              type="button"
-              disabled={pending}
-              onClick={() => run(() => draftPostWithAi(post.id))}
-              className="mt-3 w-full rounded-xl bg-[var(--karrot-primary)] py-2.5 text-sm font-semibold text-white"
-            >
-              Draft from sources
-            </button>
-          </div>
-
-          <div className="rounded-2xl border border-[var(--karrot-border)] bg-white p-5 shadow-sm">
-            <h2 className="text-sm font-semibold">Social</h2>
-            <p className="mt-2 text-xs text-[var(--karrot-muted)]">Instagram / Facebook captions</p>
-            <textarea
-              readOnly
-              rows={3}
-              className="mt-2 w-full rounded-lg border border-[var(--karrot-border)] p-2 text-xs"
-              value={post.social_captions?.zh ?? ""}
-            />
-            <button
-              type="button"
-              className="mt-1 text-xs font-semibold text-[var(--karrot-primary)]"
-              onClick={() => navigator.clipboard.writeText(post.social_captions?.zh ?? "")}
-            >
-              Copy 中文 caption
-            </button>
-            <textarea
-              readOnly
-              rows={3}
-              className="mt-3 w-full rounded-lg border border-[var(--karrot-border)] p-2 text-xs"
-              value={post.social_captions?.en ?? ""}
-            />
-            <button
-              type="button"
-              className="mt-1 text-xs font-semibold text-[var(--karrot-primary)]"
-              onClick={() => navigator.clipboard.writeText(post.social_captions?.en ?? "")}
-            >
-              Copy English caption
-            </button>
-            <div className="mt-4 grid grid-cols-2 gap-2">
-              <a href={squareOg} download="karrot-social-1080.png" className="text-center text-xs font-semibold underline">
-                Download 1080×1080
-              </a>
-              <a href={portraitOg} download="karrot-social-1080x1350.png" className="text-center text-xs font-semibold underline">
-                Download 1080×1350
-              </a>
+            <div className="studio-field">
+              <label>URL slug</label>
+              <input value={slug} onChange={(e) => setSlug(e.target.value)} readOnly={demoMode} />
             </div>
-          </div>
-
-          <div className="rounded-2xl border border-[var(--karrot-border)] bg-white p-5 shadow-sm">
-            <h2 className="text-sm font-semibold">Publish to Kit</h2>
-            <select
-              value={publishMode}
-              onChange={(e) => setPublishMode(e.target.value as "web_only" | "web_and_email")}
-              className="mt-2 w-full rounded-lg border border-[var(--karrot-border)] px-2 py-2 text-sm"
-            >
-              <option value="web_only">Web only (default)</option>
-              <option value="web_and_email">Web and email my list</option>
-            </select>
+            <div className="studio-field">
+              <label>Publish to Kit</label>
+              <select
+                value={publishMode}
+                onChange={(e) => setPublishMode(e.target.value as "web_only" | "web_and_email")}
+              >
+                <option value="web_only">Web only</option>
+                <option value="web_and_email">Web and email my list</option>
+              </select>
+            </div>
             {publishMode === "web_and_email" && (
-              <label className="mt-2 flex items-center gap-2 text-xs">
+              <label className="flex items-start gap-2 text-xs leading-snug">
                 <input
                   type="checkbox"
                   checked={confirmEmail}
                   onChange={(e) => setConfirmEmail(e.target.checked)}
+                  className="mt-0.5"
                 />
                 I confirm sending this to my email list
               </label>
             )}
-            <button
-              type="button"
-              disabled={pending}
-              onClick={() =>
-                run(async () => {
-                  await publishPostToKit(post.id, publishMode, confirmEmail);
-                  setMessage("Published to Kit");
-                })
-              }
-              className="mt-3 w-full rounded-xl bg-black py-2.5 text-sm font-semibold text-white"
-            >
-              Publish
-            </button>
-            {post.kit_broadcast_id && (
-              <p className="mt-2 text-xs text-[var(--karrot-muted)]">
-                Kit broadcast: {post.kit_broadcast_id}
+            <div>
+              <p className="mb-2 text-xs font-semibold text-[var(--karrot-muted)]">Social formats</p>
+              <textarea
+                readOnly
+                rows={2}
+                className="mb-1 w-full rounded-lg border border-[var(--karrot-border)] p-2 text-xs"
+                value={post.social_captions?.zh ?? ""}
+              />
+              <button
+                type="button"
+                className="text-xs font-semibold text-[var(--karrot-accent)]"
+                onClick={() => navigator.clipboard.writeText(post.social_captions?.zh ?? "")}
+              >
+                Copy 中文 caption
+              </button>
+              <textarea
+                readOnly
+                rows={2}
+                className="mb-1 mt-2 w-full rounded-lg border border-[var(--karrot-border)] p-2 text-xs"
+                value={post.social_captions?.en ?? ""}
+              />
+              <button
+                type="button"
+                className="text-xs font-semibold text-[var(--karrot-accent)]"
+                onClick={() => navigator.clipboard.writeText(post.social_captions?.en ?? "")}
+              >
+                Copy English caption
+              </button>
+              <div className="mt-3 flex flex-col gap-1 text-xs font-semibold text-[var(--karrot-accent)]">
+                <a href={squareOg} download="karrot-1080-square.png">Download 1080×1080</a>
+                <a href={portraitOg} download="karrot-1080x1350.png">Download 1080×1350</a>
+              </div>
+            </div>
+            <div className="studio-ai-box">
+              <p>
+                Draft a new section from the attached sources. Your My take and accepted edits stay
+                untouched.
               </p>
+              <button
+                type="button"
+                disabled={pending}
+                className="studio-btn studio-btn-primary"
+                onClick={() => run(() => draftPostWithAi(post.id))}
+              >
+                Draft from sources
+              </button>
+            </div>
+            {versions.length > 0 && !demoMode && (
+              <div>
+                <p className="mb-2 text-xs font-semibold">Versions</p>
+                <ul className="space-y-2 text-xs">
+                  {versions.slice(0, 5).map((v) => (
+                    <li key={v.id} className="flex justify-between gap-2">
+                      <span className="truncate">{new Date(v.created_at).toLocaleString()}</span>
+                      <button
+                        type="button"
+                        className="font-semibold text-[var(--karrot-accent)]"
+                        onClick={() => run(() => restoreVersion(v.id))}
+                      >
+                        Restore
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {post.kit_broadcast_id && (
+              <p className="text-xs text-[var(--karrot-muted)]">Kit: {post.kit_broadcast_id}</p>
             )}
           </div>
-
-          {versions.length > 0 && (
-            <div className="rounded-2xl border border-[var(--karrot-border)] bg-white p-5 shadow-sm">
-              <h2 className="text-sm font-semibold">Versions</h2>
-              <ul className="mt-2 space-y-2 text-xs">
-                {versions.slice(0, 5).map((v) => (
-                  <li key={v.id} className="flex items-center justify-between gap-2">
-                    <span className="truncate">{new Date(v.created_at).toLocaleString()}</span>
-                    <button
-                      type="button"
-                      className="font-semibold text-[var(--karrot-primary)]"
-                      onClick={() => run(() => restoreVersion(v.id))}
-                    >
-                      Restore
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
         </aside>
       </div>
     </div>
@@ -434,6 +431,11 @@ export function PostEditor({
 
 function stripSourcesForEditor(body: string): string {
   return body.replace(/\n## Sources[\s\S]*$/m, "").trim();
+}
+
+function extractSourcesBlock(body: string): string {
+  const m = body.match(/\n## Sources([\s\S]*)$/m);
+  return m ? `## Sources${m[1]}`.trim() : "";
 }
 
 function mergeBodyWithSources(edited: string, previous: string): string {
