@@ -1,0 +1,33 @@
+@import "tailwindcss";
+
+:root {
+  --karrot-bg: #fbf3eb;
+  --karrot-card: #f4e8dd;
+  --karrot-header: #a89081;
+  --karrot-accent: #d18e63;
+  --karrot-text: #0f172a;
+  --karrot-muted: #64748b;
+  --karrot-border: #e2e8f0;
+  --karrot-primary: #4f46e5;
+  --karrot-primary-soft: #eef2ff;
+}
+
+@theme inline {
+  --color-karrot-bg: var(--karrot-bg);
+  --color-karrot-card: var(--karrot-card);
+  --color-karrot-header: var(--karrot-header);
+  --color-karrot-accent: var(--karrot-accent);
+  --font-display: var(--font-anton);
+  --font-sans: var(--font-roboto);
+}
+
+body {
+  background: var(--karrot-bg);
+  color: var(--karrot-text);
+  font-family: var(--font-roboto), Roboto, system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+.font-display {
+  font-family: var(--font-anton), Anton, sans-serif;
+}
