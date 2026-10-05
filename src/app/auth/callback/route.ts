@@ -1,32 +1,54 @@
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
+import { getSiteUrl } from "@/lib/env";
+
+function errorRedirect(origin: string, reason: string, description?: string) {
+  const url = new URL("/auth/error", origin);
+  url.searchParams.set("reason", reason);
+  if (description) url.searchParams.set("description", description);
+  return NextResponse.redirect(url);
+}
 
 export async function GET(request: Request) {
-  const { searchParams, origin } = new URL(request.url);
-  const code = searchParams.get("code");
+  const { searchParams } = new URL(request.url);
+  const origin = getSiteUrl().replace(/\/$/, "") || new URL(request.url).origin;
   const next = searchParams.get("next") ?? "/studio";
 
-  if (code) {
-    const cookieStore = await cookies();
-    const supabase = createServerClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-      {
-        cookies: {
-          getAll() {
-            return cookieStore.getAll();
-          },
-          setAll(cookiesToSet) {
-            cookiesToSet.forEach(({ name, value, options }) =>
-              cookieStore.set(name, value, options),
-            );
-          },
-        },
-      },
-    );
-    await supabase.auth.exchangeCodeForSession(code);
+  const oauthError = searchParams.get("error");
+  const oauthDescription = searchParams.get("error_description");
+  if (oauthError) {
+    return errorRedirect(origin, oauthError, oauthDescription ?? undefined);
   }
 
-  return NextResponse.redirect(`${origin}${next}`);
+  const code = searchParams.get("code");
+  if (!code) {
+    return errorRedirect(origin, "missing_code", "No login code was provided.");
+  }
+
+  const cookieStore = await cookies();
+  const supabase = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        getAll() {
+          return cookieStore.getAll();
+        },
+        setAll(cookiesToSet) {
+          cookiesToSet.forEach(({ name, value, options }) =>
+            cookieStore.set(name, value, options),
+          );
+        },
+      },
+    },
+  );
+
+  const { error } = await supabase.auth.exchangeCodeForSession(code);
+  if (error) {
+    return errorRedirect(origin, error.code ?? "exchange_failed", error.message);
+  }
+
+  const safeNext = next.startsWith("/") ? next : "/studio";
+  return NextResponse.redirect(`${origin}${safeNext}`);
 }

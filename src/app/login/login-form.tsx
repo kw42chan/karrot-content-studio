@@ -1,29 +1,65 @@
 "use client";
 
+import { friendlySignInError } from "@/lib/auth/messages";
 import { createClient } from "@/lib/supabase/client";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useState } from "react";
 
+function authCallbackBaseUrl(): string {
+  const fromEnv = process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, "");
+  if (fromEnv) return fromEnv;
+  if (typeof window !== "undefined") return window.location.origin;
+  return "";
+}
+
 export function LoginForm() {
   const params = useSearchParams();
   const next = params.get("next") ?? "/studio";
   const error = params.get("error");
+  const authError = params.get("auth_error");
+  const authMessage = params.get("auth_message");
   const [email, setEmail] = useState("");
   const [sent, setSent] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
+    setFormError(null);
     setLoading(true);
-    const supabase = createClient();
-    const redirectTo = `${window.location.origin}/auth/callback?next=${encodeURIComponent(next)}`;
-    await supabase.auth.signInWithOtp({
-      email,
-      options: { emailRedirectTo: redirectTo },
-    });
-    setSent(true);
-    setLoading(false);
+
+    const normalized = email.trim().toLowerCase();
+    if (!normalized) {
+      setFormError("Enter your email address.");
+      setLoading(false);
+      return;
+    }
+
+    try {
+      const supabase = createClient();
+      const base = authCallbackBaseUrl();
+      if (!base) {
+        setFormError("Could not determine site URL for sign-in. Set NEXT_PUBLIC_SITE_URL.");
+        return;
+      }
+      const redirectTo = `${base}/auth/callback?next=${encodeURIComponent(next)}`;
+      const { error: signInError } = await supabase.auth.signInWithOtp({
+        email: normalized,
+        options: { emailRedirectTo: redirectTo },
+      });
+
+      if (signInError) {
+        setFormError(friendlySignInError(signInError));
+        return;
+      }
+
+      setSent(true);
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : "Could not send the login email.");
+    } finally {
+      setLoading(false);
+    }
   }
 
   return (
@@ -33,9 +69,21 @@ export function LoginForm() {
           This email is not allowed to use Content Studio.
         </p>
       )}
+      {authError && (
+        <p className="mt-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+          {authMessage
+            ? decodeURIComponent(authMessage)
+            : "Sign-in failed. Please request a new login link."}
+        </p>
+      )}
+      {formError && (
+        <p className="mt-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+          {formError}
+        </p>
+      )}
       {sent ? (
         <p className="mt-6 rounded-xl border border-[var(--karrot-border)] bg-white px-4 py-4 text-sm">
-          Check your inbox for the sign-in link.
+          Check your email for the login link.
         </p>
       ) : (
         <form onSubmit={onSubmit} className="mt-6 space-y-4">
@@ -48,6 +96,7 @@ export function LoginForm() {
               onChange={(e) => setEmail(e.target.value)}
               className="mt-1 w-full rounded-xl border border-[var(--karrot-border)] px-3 py-2.5"
               placeholder="darwin.chankawing@gmail.com"
+              autoComplete="email"
             />
           </label>
           <button
