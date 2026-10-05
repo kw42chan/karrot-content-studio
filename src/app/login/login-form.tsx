@@ -1,10 +1,12 @@
 "use client";
 
-import { friendlySignInError } from "@/lib/auth/messages";
+import { friendlySignInError, isRateLimitError } from "@/lib/auth/messages";
 import { createClient } from "@/lib/supabase/client";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+
+const RATE_LIMIT_COOLDOWN_MS = 60_000;
 
 function authCallbackBaseUrl(): string {
   const fromEnv = process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, "");
@@ -23,6 +25,25 @@ export function LoginForm() {
   const [sent, setSent] = useState(false);
   const [loading, setLoading] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+  const [cooldownEndsAt, setCooldownEndsAt] = useState<number | null>(null);
+  const [cooldownSeconds, setCooldownSeconds] = useState(0);
+
+  useEffect(() => {
+    if (!cooldownEndsAt) {
+      setCooldownSeconds(0);
+      return;
+    }
+    const tick = () => {
+      const left = Math.max(0, Math.ceil((cooldownEndsAt - Date.now()) / 1000));
+      setCooldownSeconds(left);
+      if (left <= 0) setCooldownEndsAt(null);
+    };
+    tick();
+    const id = window.setInterval(tick, 1000);
+    return () => window.clearInterval(id);
+  }, [cooldownEndsAt]);
+
+  const submitDisabled = loading || cooldownSeconds > 0;
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -51,6 +72,9 @@ export function LoginForm() {
 
       if (signInError) {
         setFormError(friendlySignInError(signInError));
+        if (isRateLimitError(signInError)) {
+          setCooldownEndsAt(Date.now() + RATE_LIMIT_COOLDOWN_MS);
+        }
         return;
       }
 
@@ -60,6 +84,12 @@ export function LoginForm() {
     } finally {
       setLoading(false);
     }
+  }
+
+  function buttonLabel() {
+    if (loading) return "Sending…";
+    if (cooldownSeconds > 0) return `Try again in ${cooldownSeconds}s`;
+    return "Email me a link";
   }
 
   return (
@@ -94,17 +124,19 @@ export function LoginForm() {
               required
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="mt-1 w-full rounded-xl border border-[var(--karrot-border)] px-3 py-2.5"
+              className="mt-1 w-full rounded-xl border border-[var(--karrot-border)] bg-white px-3 py-2.5"
               placeholder="darwin.chankawing@gmail.com"
               autoComplete="email"
+              disabled={loading}
             />
           </label>
           <button
             type="submit"
-            disabled={loading}
-            className="w-full rounded-full bg-[var(--karrot-primary)] py-2.5 text-sm font-semibold text-white disabled:opacity-60"
+            disabled={submitDisabled}
+            className="btn-primary btn-primary--block"
+            aria-busy={loading}
           >
-            {loading ? "Sending…" : "Email me a link"}
+            {buttonLabel()}
           </button>
         </form>
       )}

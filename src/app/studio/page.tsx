@@ -26,7 +26,7 @@ export default async function StudioHomePage() {
         <form action={newPost}>
           <button
             type="submit"
-            className="rounded-full bg-[var(--karrot-primary)] px-4 py-2 text-sm font-semibold text-white"
+            className="btn-primary px-4 py-2 text-sm"
           >
             New post
           </button>

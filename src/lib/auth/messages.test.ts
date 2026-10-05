@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { friendlyCallbackError, friendlySignInError } from "./messages";
+import { friendlyCallbackError, friendlySignInError, isRateLimitError } from "./messages";
 
 describe("friendlySignInError", () => {
   it("maps rate limit code", () => {
@@ -12,6 +12,12 @@ describe("friendlySignInError", () => {
     expect(
       friendlySignInError({ message: "Invalid email redirect URL" }),
     ).toContain("redirect");
+  });
+});
+
+describe("isRateLimitError", () => {
+  it("detects rate limit code", () => {
+    expect(isRateLimitError({ code: "over_email_send_rate_limit" })).toBe(true);
   });
 });
 

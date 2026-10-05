@@ -1,5 +1,11 @@
 /** User-facing copy for Supabase auth errors (login + callback). */
 
+export function isRateLimitError(error: { message?: string; code?: string }): boolean {
+  const code = error.code ?? "";
+  const message = error.message ?? "";
+  return code === "over_email_send_rate_limit" || message.includes("over_email_send_rate_limit");
+}
+
 export function friendlySignInError(error: {
   message?: string;
   code?: string;
