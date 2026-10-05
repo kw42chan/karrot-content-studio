@@ -6,7 +6,9 @@ import {
   applyPostComments,
   draftPostWithAi,
   generateVariantFromBlogAction,
+  quickAdjustVariantAction,
   publishPostToKit,
+  saveGenerationPrefs,
   resolvePostComment,
   resolveSuggestion,
   restoreVersion,
@@ -14,6 +16,7 @@ import {
   saveVariant,
 } from "@/app/actions/studio";
 import { ChannelSettingsPanel } from "@/components/studio/channel-settings-panel";
+import { GenerationControls, VariantQuickActions } from "@/components/studio/generation-controls";
 import { SourceCard } from "@/components/studio/source-card";
 import { useStudioNav } from "@/components/studio/shell/studio-nav-context";
 import { VariantSuggestions } from "@/components/studio/variant-suggestions";
@@ -26,6 +29,10 @@ import {
   type PostVariantRecord,
   type SuggestionChannel,
 } from "@/lib/studio/channels";
+import {
+  normalizeGenerationPrefs,
+  type ChannelGenerationPrefs,
+} from "@/lib/studio/generation-prefs";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState, useTransition } from "react";
@@ -77,6 +84,7 @@ export type EditorPost = {
   kit_broadcast_id: string | null;
   seo_title?: string | null;
   meta_description?: string | null;
+  generation_prefs?: ChannelGenerationPrefs | null;
 };
 
 type VariantState = Record<"x" | "threads" | "zh" | "en", PostVariantRecord>;
@@ -159,6 +167,9 @@ export function PostEditor({
   const [confirmEmail, setConfirmEmail] = useState(false);
   const [localSuggestions, setLocalSuggestions] = useState(suggestions);
   const [ogTick, setOgTick] = useState(0);
+  const [generationPrefs, setGenerationPrefs] = useState<ChannelGenerationPrefs>(() =>
+    normalizeGenerationPrefs(post.generation_prefs),
+  );
 
   const igStorage = contentLocale === "zh-HK" ? "zh" : "en";
   const igAspect = variants[igStorage].extra.aspect ?? "square";
@@ -235,6 +246,22 @@ export function PostEditor({
 
   function draftChannel(): SuggestionChannel {
     return suggestionChannelFor(activeChannel, contentLocale);
+  }
+
+  function persistGenerationPrefs(next: ChannelGenerationPrefs) {
+    setGenerationPrefs(next);
+    if (demoMode) return;
+    start(async () => {
+      try {
+        await saveGenerationPrefs(post.id, next);
+      } catch (e) {
+        notify(e instanceof Error ? e.message : "Could not save generation settings", true);
+      }
+    });
+  }
+
+  function runQuickAdjust(adjust: "shorter" | "longer" | "more_detail") {
+    run(() => quickAdjustVariantAction(post.id, draftChannel(), adjust, generationPrefs));
   }
 
   async function handleSave() {
@@ -547,6 +574,7 @@ export function PostEditor({
                     })
                   }
                 />
+                <VariantQuickActions disabled={demoMode} onAdjust={runQuickAdjust} />
               </>
             )}
 
@@ -559,7 +587,13 @@ export function PostEditor({
                 charCount={xChars}
                 onCopy={() => copyText(variants.x.content)}
                 showGenerate={showGenerateEmpty}
-                onGenerate={() => run(() => generateVariantFromBlogAction(post.id, "x"))}
+                onGenerate={() =>
+                  run(() => generateVariantFromBlogAction(post.id, "x", generationPrefs))
+                }
+                channel="x"
+                generationPrefs={generationPrefs}
+                onPrefsChange={persistGenerationPrefs}
+                onQuickAdjust={runQuickAdjust}
                 suggestions={tabSuggestions}
                 demoMode={demoMode}
                 run={run}
@@ -575,7 +609,13 @@ export function PostEditor({
                 charCount={threadsChars}
                 onCopy={() => copyText(variants.threads.content)}
                 showGenerate={showGenerateEmpty}
-                onGenerate={() => run(() => generateVariantFromBlogAction(post.id, "threads"))}
+                onGenerate={() =>
+                  run(() => generateVariantFromBlogAction(post.id, "threads", generationPrefs))
+                }
+                channel="threads"
+                generationPrefs={generationPrefs}
+                onPrefsChange={persistGenerationPrefs}
+                onQuickAdjust={runQuickAdjust}
                 suggestions={tabSuggestions}
                 demoMode={demoMode}
                 run={run}
@@ -591,11 +631,19 @@ export function PostEditor({
                       type="button"
                       className="studio-btn studio-btn-primary"
                       onClick={() =>
-                        run(() => generateVariantFromBlogAction(post.id, igStorage))
+                        run(() =>
+                          generateVariantFromBlogAction(post.id, igStorage, generationPrefs),
+                        )
                       }
                     >
                       Generate from blog
                     </button>
+                    <GenerationControls
+                      channel="instagram"
+                      prefs={generationPrefs}
+                      onChange={persistGenerationPrefs}
+                      disabled={demoMode}
+                    />
                   </div>
                 ) : (
                   <>
@@ -643,13 +691,26 @@ export function PostEditor({
                   onDismiss={(id) => run(() => resolveSuggestion(id, "dismiss"))}
                 />
                 {!showGenerateEmpty && (
-                  <button
-                    type="button"
-                    className="studio-btn studio-btn-primary mt-4 h-8 text-xs"
-                    onClick={() => run(() => generateVariantFromBlogAction(post.id, igStorage))}
-                  >
-                    Regenerate from blog
-                  </button>
+                  <div className="mt-4 flex flex-col gap-3">
+                    <GenerationControls
+                      channel="instagram"
+                      prefs={generationPrefs}
+                      onChange={persistGenerationPrefs}
+                      disabled={demoMode}
+                    />
+                    <button
+                      type="button"
+                      className="studio-btn studio-btn-primary h-8 text-xs"
+                      onClick={() =>
+                        run(() =>
+                          generateVariantFromBlogAction(post.id, igStorage, generationPrefs),
+                        )
+                      }
+                    >
+                      Regenerate from blog
+                    </button>
+                    <VariantQuickActions disabled={demoMode} onAdjust={runQuickAdjust} />
+                  </div>
                 )}
               </div>
             )}
@@ -695,7 +756,11 @@ export function PostEditor({
           }}
           demoMode={demoMode}
           pending={pending}
-          onDraftFromSources={() => run(() => draftPostWithAi(post.id, draftChannel()))}
+          onDraftFromSources={() =>
+            run(() => draftPostWithAi(post.id, draftChannel(), generationPrefs))
+          }
+          generationPrefs={generationPrefs}
+          onGenerationPrefsChange={persistGenerationPrefs}
           versions={versions}
           onRestoreVersion={(id) => run(() => restoreVersion(id))}
         />
@@ -713,6 +778,10 @@ function VariantChannelEditor({
   onCopy,
   showGenerate,
   onGenerate,
+  channel,
+  generationPrefs,
+  onPrefsChange,
+  onQuickAdjust,
   suggestions,
   demoMode,
   run,
@@ -725,6 +794,10 @@ function VariantChannelEditor({
   onCopy: () => void;
   showGenerate: boolean;
   onGenerate: () => void;
+  channel: "x" | "threads";
+  generationPrefs: ChannelGenerationPrefs;
+  onPrefsChange: (p: ChannelGenerationPrefs) => void;
+  onQuickAdjust: (a: "shorter" | "longer" | "more_detail") => void;
   suggestions: EditorSuggestion[];
   demoMode: boolean;
   run: (fn: () => Promise<void>) => void;
@@ -733,7 +806,13 @@ function VariantChannelEditor({
     return (
       <div className="studio-generate-empty">
         <p>No draft for this channel yet.</p>
-        <button type="button" className="studio-btn studio-btn-primary" onClick={onGenerate}>
+        <GenerationControls
+          channel={channel}
+          prefs={generationPrefs}
+          onChange={onPrefsChange}
+          disabled={demoMode}
+        />
+        <button type="button" className="studio-btn studio-btn-primary mt-3" onClick={onGenerate}>
           Generate from blog
         </button>
       </div>
@@ -763,9 +842,18 @@ function VariantChannelEditor({
         onEdit={(id, text) => run(() => resolveSuggestion(id, "accept", text))}
         onDismiss={(id) => run(() => resolveSuggestion(id, "dismiss"))}
       />
-      <button type="button" className="studio-btn studio-btn-primary mt-4 h-8 text-xs" onClick={onGenerate}>
-        Regenerate from blog
-      </button>
+      <div className="mt-4 flex flex-col gap-3">
+        <GenerationControls
+          channel={channel}
+          prefs={generationPrefs}
+          onChange={onPrefsChange}
+          disabled={demoMode}
+        />
+        <button type="button" className="studio-btn studio-btn-primary h-8 text-xs" onClick={onGenerate}>
+          Regenerate from blog
+        </button>
+        <VariantQuickActions disabled={demoMode} onAdjust={onQuickAdjust} />
+      </div>
     </div>
   );
 }

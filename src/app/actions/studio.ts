@@ -2,17 +2,23 @@
 
 import { revalidatePath } from "next/cache";
 import {
+  adjustBlogBody,
   draftPostBody,
   reviseDraftFromComments,
   suggestEnrichmentParagraph,
   summarizeSource,
 } from "@/lib/ai/openrouter";
 import {
+  adjustVariantContent,
   draftVariantFromSources,
   generateVariantFromBlog,
   reviseVariantFromComments,
 } from "@/lib/ai/variant-draft";
 import type { SuggestionChannel, VariantExtra } from "@/lib/studio/channels";
+import {
+  normalizeGenerationPrefs,
+  type PostGenerationPrefs,
+} from "@/lib/studio/generation-prefs";
 import { publishToKit, type KitPublishMode } from "@/lib/kit/client";
 import { renderKitPostHtml } from "@/lib/kit/render-post-html";
 import {
@@ -399,10 +405,39 @@ export async function applyPostComments(postId: string, channel: SuggestionChann
   revalidatePath(`/studio/posts/${postId}`);
 }
 
-export async function draftPostWithAi(postId: string, channel: SuggestionChannel) {
+export async function saveGenerationPrefs(postId: string, prefs: PostGenerationPrefs) {
+  const supabase = await requireAdmin();
+  const { data: post } = await supabase
+    .from("studio_posts")
+    .select("generation_prefs")
+    .eq("id", postId)
+    .single();
+  if (!post) throw new Error("Post not found");
+
+  const merged = normalizeGenerationPrefs({
+    ...(post.generation_prefs as object),
+    ...prefs,
+  });
+
+  const { error } = await supabase
+    .from("studio_posts")
+    .update({ generation_prefs: merged })
+    .eq("id", postId);
+  if (error) throw new Error(error.message);
+  revalidatePath(`/studio/posts/${postId}`);
+}
+
+export async function draftPostWithAi(
+  postId: string,
+  channel: SuggestionChannel,
+  prefsInput?: PostGenerationPrefs,
+) {
   const supabase = await requireAdmin();
   const { data: post } = await supabase.from("studio_posts").select("*").eq("id", postId).single();
   if (!post) throw new Error("Post not found");
+
+  const prefs = normalizeGenerationPrefs(prefsInput ?? post.generation_prefs);
+  await saveGenerationPrefs(postId, prefs);
 
   const sources = await loadPostSources(supabase, postId);
   if (!sources.length) throw new Error("Attach at least one source first");
@@ -414,6 +449,8 @@ export async function draftPostWithAi(postId: string, channel: SuggestionChannel
       title: post.title,
       language: post.body_language as "zh-HK" | "en",
       myTake: post.my_take,
+      length: prefs.blog.length,
+      coverage: prefs.blog.coverage,
       sources: bundles,
     });
 
@@ -444,6 +481,7 @@ export async function draftPostWithAi(postId: string, channel: SuggestionChannel
       language: post.body_language as "zh-HK" | "en",
       sources: bundles,
       currentContent: existing?.content as string | undefined,
+      prefs,
     });
 
     const { error: sugErr } = await supabase.from("studio_suggestions").insert({
@@ -461,17 +499,25 @@ export async function draftPostWithAi(postId: string, channel: SuggestionChannel
   revalidatePath(`/studio/posts/${postId}`);
 }
 
-export async function generateVariantFromBlogAction(postId: string, channel: SuggestionChannel) {
+export async function generateVariantFromBlogAction(
+  postId: string,
+  channel: SuggestionChannel,
+  prefsInput?: PostGenerationPrefs,
+) {
   if (channel === "blog") throw new Error("Use blog tab only");
   const supabase = await requireAdmin();
   const { data: post } = await supabase.from("studio_posts").select("*").eq("id", postId).single();
   if (!post) throw new Error("Post not found");
+
+  const prefs = normalizeGenerationPrefs(prefsInput ?? post.generation_prefs);
+  await saveGenerationPrefs(postId, prefs);
 
   const generated = await generateVariantFromBlog({
     channel,
     postTitle: post.title,
     blogBody: stripSourcesSection(post.body as string),
     language: post.body_language as "zh-HK" | "en",
+    prefs,
   });
 
   const { error: sugErr } = await supabase.from("studio_suggestions").insert({
@@ -484,6 +530,84 @@ export async function generateVariantFromBlogAction(postId: string, channel: Sug
     extra: generated.extra ?? {},
   });
   if (sugErr) throw new Error(sugErr.message);
+  revalidatePath(`/studio/posts/${postId}`);
+}
+
+export async function quickAdjustVariantAction(
+  postId: string,
+  channel: SuggestionChannel,
+  adjust: "shorter" | "longer" | "more_detail",
+  prefsInput?: PostGenerationPrefs,
+) {
+  const supabase = await requireAdmin();
+  const { data: post } = await supabase.from("studio_posts").select("*").eq("id", postId).single();
+  if (!post) throw new Error("Post not found");
+
+  const prefs = normalizeGenerationPrefs(prefsInput ?? post.generation_prefs);
+  const language = post.body_language as "zh-HK" | "en";
+  const sources = await loadPostSources(supabase, postId);
+  const bundles = await loadSourceBundles(supabase, sources);
+
+  const label =
+    adjust === "shorter"
+      ? "Make shorter"
+      : adjust === "longer"
+        ? "Make longer"
+        : "Add more detail from sources";
+
+  if (channel === "blog") {
+    const body = stripSourcesSection(post.body as string);
+    if (!body.trim()) throw new Error("Write or draft blog content first");
+    const revised = await adjustBlogBody({
+      title: post.title,
+      language,
+      currentBody: body,
+      adjust,
+      sources: adjust === "more_detail" ? bundles : undefined,
+    });
+    const { error: sugErr } = await supabase.from("studio_suggestions").insert({
+      post_id: postId,
+      source_id: null,
+      paragraph: revised,
+      status: "pending",
+      label,
+      channel: "blog",
+    });
+    if (sugErr) throw new Error(sugErr.message);
+  } else {
+    const { data: existing } = await supabase
+      .from("studio_post_variants")
+      .select("content, extra")
+      .eq("post_id", postId)
+      .eq("channel", channel)
+      .maybeSingle();
+
+    const content = (existing?.content as string) ?? "";
+    if (!content.trim()) throw new Error("No content to adjust — generate or draft first");
+
+    const adjusted = await adjustVariantContent({
+      channel,
+      adjust,
+      postTitle: post.title,
+      language,
+      currentContent: content,
+      currentExtra: (existing?.extra as Record<string, unknown>) ?? {},
+      sources: adjust === "more_detail" ? bundles : undefined,
+      prefs,
+    });
+
+    const { error: sugErr } = await supabase.from("studio_suggestions").insert({
+      post_id: postId,
+      source_id: null,
+      paragraph: adjusted.content,
+      status: "pending",
+      label,
+      channel,
+      extra: adjusted.extra ?? {},
+    });
+    if (sugErr) throw new Error(sugErr.message);
+  }
+
   revalidatePath(`/studio/posts/${postId}`);
 }
 
@@ -525,7 +649,13 @@ export async function resolveSuggestion(
     const sourcesMd = buildSourcesMarkdown(sources);
     const marker = "## Sources";
     let newBody: string;
-    if (sug.label === "Draft from sources") {
+    const fullBodyReplace =
+      sug.label === "Draft from sources" ||
+      sug.label === "Make shorter" ||
+      sug.label === "Make longer" ||
+      sug.label === "Add more detail from sources";
+
+    if (fullBodyReplace) {
       newBody = appendSourcesToBody(paragraph, sourcesMd);
     } else if ((post.body as string).includes(marker)) {
       newBody = (post.body as string).replace(marker, `${paragraph}\n\n${marker}`);

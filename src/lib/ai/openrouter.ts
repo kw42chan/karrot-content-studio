@@ -1,8 +1,16 @@
+import { completeJson } from "@/lib/ai/llm-json";
 import { getOpenRouterKey, getOpenRouterModel, getSiteUrl } from "@/lib/env";
+import { formatSourceBundlesForPrompt } from "@/lib/sources/chunk-for-ai";
 import type { BilingualSummary } from "@/lib/sources/types";
 import fixtureSummaries from "@/lib/fixtures/summaries.json";
 import { normalizeSourceUrl } from "@/lib/sources/normalize-url";
 import { sourceTextForAi } from "@/lib/sources/text-for-ai";
+import type { BlogCoveragePref, BlogLengthPref } from "@/lib/studio/generation-prefs";
+import {
+  blogCoveragePrompt,
+  blogLengthPrompt,
+  blogMaxTokens,
+} from "@/lib/studio/generation-prefs";
 
 const summarySchema = `{
   "en": { "headline": string, "summary": string, "points": string[] },
@@ -81,6 +89,8 @@ export async function draftPostBody(params: {
   title: string;
   language: "zh-HK" | "en";
   myTake: string;
+  length: BlogLengthPref;
+  coverage: BlogCoveragePref;
   sources: {
     author: string | null;
     title: string | null;
@@ -100,9 +110,17 @@ export async function draftPostBody(params: {
       ? "Write the blog body in Traditional Chinese (香港書面語) for Hong Kong business owners."
       : "Write the blog body in English for Hong Kong business owners.";
 
+  const inDepth = params.length === "indepth";
+  const sourcesBlock = formatSourceBundlesForPrompt(params.sources, {
+    perChunkMax: inDepth ? 12000 : 14000,
+    inDepth,
+  });
+
   const prompt = `You are writing for Karrot Digital (Darwin Chan), an AI consultancy in Hong Kong.
 Voice: practical, plain, respectful of the reader's time. No hype, no AI clichés.
 ${langNote}
+${blogLengthPrompt(params.length)}
+${blogCoveragePrompt(params.coverage)}
 Do NOT include a "My take" section — that is separate.
 End with a short consultancy CTA paragraph inviting readers to book a conversation about AI automation.
 Return JSON: { "body": "markdown string with ## subheadings", "keyPoint": "one sentence for social graphic", "socialCaptions": { "zh": "IG/FB caption in Traditional Chinese", "en": "IG/FB caption in English" } }
@@ -111,42 +129,54 @@ Post title: ${params.title}
 Darwin's my take (for context only, do not copy verbatim): ${params.myTake || "(empty)"}
 
 Sources:
-${params.sources
-  .map(
-    (s, i) =>
-      `${i + 1}. ${s.author ?? "Unknown"} — ${s.title ?? s.url}\nEN summary: ${s.summaryEn}\nZH summary: ${s.summaryZh}\nFull source text:\n${sourceTextForAi(s.fullText, 14000)}`,
-  )
-  .join("\n\n\n")}`;
+${sourcesBlock}`;
 
-  const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-      "HTTP-Referer": getSiteUrl(),
-      "X-Title": "Karrot Content Studio",
-    },
-    body: JSON.stringify({
-      model: getOpenRouterModel(),
-      messages: [{ role: "user", content: prompt }],
-      response_format: { type: "json_object" },
-    }),
+  return completeJson({
+    prompt,
+    maxTokens: blogMaxTokens(params.length),
+    offline: () => offlineDraft(params),
   });
+}
 
-  if (!res.ok) {
-    throw new Error(`OpenRouter draft failed: ${res.status}`);
-  }
+export async function adjustBlogBody(params: {
+  title: string;
+  language: "zh-HK" | "en";
+  currentBody: string;
+  adjust: "shorter" | "longer" | "more_detail";
+  sources?: {
+    author: string | null;
+    title: string | null;
+    url: string;
+    summaryEn: string;
+    summaryZh: string;
+    fullText: string;
+  }[];
+}): Promise<string> {
+  const adjustLine =
+    params.adjust === "shorter"
+      ? "Make the draft noticeably SHORTER while keeping the main arguments."
+      : params.adjust === "longer"
+        ? "Make the draft LONGER with more explanation and transitions; do not add fluff."
+        : "ADD MORE DETAIL from the attached sources — facts, examples, numbers — without repeating My take.";
 
-  const json = (await res.json()) as {
-    choices?: { message?: { content?: string } }[];
-  };
-  const content = json.choices?.[0]?.message?.content;
-  if (!content) throw new Error("Empty draft response");
-  return JSON.parse(content) as {
-    body: string;
-    keyPoint: string;
-    socialCaptions: { zh: string; en: string };
-  };
+  const sourcesBlock =
+    params.adjust === "more_detail" && params.sources?.length
+      ? `\nSources:\n${formatSourceBundlesForPrompt(params.sources, { perChunkMax: 12000, inDepth: true })}`
+      : "";
+
+  const parsed = await completeJson<{ body: string }>({
+    prompt: `Revise a blog draft. Never include or rewrite "My take".
+${adjustLine}
+Language: ${params.language === "zh-HK" ? "Traditional Chinese 香港書面語" : "English"}
+Return JSON: { "body": "full revised markdown body (not excerpt)" }
+
+Title: ${params.title}
+Current draft:
+${params.currentBody.slice(0, 50000)}${sourcesBlock}`,
+    maxTokens: params.adjust === "more_detail" ? 16384 : 8192,
+    offline: () => ({ body: params.currentBody }),
+  });
+  return parsed.body;
 }
 
 export async function suggestEnrichmentParagraph(params: {

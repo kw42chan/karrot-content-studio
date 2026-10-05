@@ -1,7 +1,9 @@
 "use client";
 
+import { GenerationControls } from "@/components/studio/generation-controls";
 import type { ContentLocale, DistributionChannel } from "@/lib/studio/channels";
 import type { EditorPost, EditorVersion } from "@/components/studio/post-editor";
+import type { ChannelGenerationPrefs } from "@/lib/studio/generation-prefs";
 
 export function ChannelSettingsPanel({
   channel,
@@ -30,6 +32,8 @@ export function ChannelSettingsPanel({
   demoMode,
   pending,
   onDraftFromSources,
+  generationPrefs,
+  onGenerationPrefsChange,
   versions,
   onRestoreVersion,
 }: {
@@ -59,6 +63,8 @@ export function ChannelSettingsPanel({
   demoMode: boolean;
   pending: boolean;
   onDraftFromSources: () => void;
+  generationPrefs: ChannelGenerationPrefs;
+  onGenerationPrefsChange: (prefs: ChannelGenerationPrefs) => void;
   versions: EditorVersion[];
   onRestoreVersion: (id: string) => void;
 }) {
@@ -207,7 +213,13 @@ export function ChannelSettingsPanel({
         )}
 
         <div className="studio-ai-box">
-          <p>
+          <GenerationControls
+            channel={channel}
+            prefs={generationPrefs}
+            onChange={onGenerationPrefsChange}
+            disabled={demoMode}
+          />
+          <p className="mt-3">
             Draft for <strong>{channelLabel}</strong> ({locale === "zh-HK" ? "中文" : "English"}) from attached
             sources. My take is never changed automatically.
           </p>
