@@ -32,14 +32,14 @@ export function StudioAppShell({
     supabase.auth.getUser().then(({ data }) => setEmail(data.user?.email ?? null));
   }, [demoMode]);
 
-  const postsHref = demoMode ? "/demo/studio" : "/studio";
+  const postsHref = demoMode ? "/demo/studio/posts" : "/studio";
   const isPosts =
     pathname === "/studio" ||
-    pathname === "/demo/studio" ||
     pathname === "/demo/studio/posts" ||
     pathname.startsWith("/demo/studio/posts/");
   const isEditor =
     pathname.includes("/studio/posts/") ||
+    pathname === "/demo/studio" ||
     Boolean(pathname.match(/\/demo\/studio\/(x|zh|instagram)/));
 
   const navCtx = useMemo(

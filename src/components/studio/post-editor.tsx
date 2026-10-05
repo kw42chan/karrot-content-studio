@@ -206,7 +206,7 @@ export function PostEditor({
   const squareOg = `/api/og/social?title=${socialTitleEnc}&keyPoint=${socialKeyEnc}&format=square&v=${ogTick}`;
   const portraitOg = `/api/og/social?title=${socialTitleEnc}&keyPoint=${socialKeyEnc}&format=portrait&v=${ogTick}`;
 
-  const postsHref = demoMode ? "/demo/studio" : "/studio";
+  const postsHref = demoMode ? "/demo/studio/posts" : "/studio";
 
   function notify(text: string, isError = false) {
     setMessage(text);
@@ -638,12 +638,6 @@ export function PostEditor({
                     >
                       Generate from blog
                     </button>
-                    <GenerationControls
-                      channel="instagram"
-                      prefs={generationPrefs}
-                      onChange={persistGenerationPrefs}
-                      disabled={demoMode}
-                    />
                   </div>
                 ) : (
                   <>
@@ -692,12 +686,6 @@ export function PostEditor({
                 />
                 {!showGenerateEmpty && (
                   <div className="mt-4 flex flex-col gap-3">
-                    <GenerationControls
-                      channel="instagram"
-                      prefs={generationPrefs}
-                      onChange={persistGenerationPrefs}
-                      disabled={demoMode}
-                    />
                     <button
                       type="button"
                       className="studio-btn studio-btn-primary h-8 text-xs"
