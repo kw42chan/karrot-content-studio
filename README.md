@@ -1,6 +1,3 @@
-<<<<<<< HEAD
-# karrot-content-studio
-=======
 # Karrot Content Studio
 
 Private content-marketing CMS for [Karrot Digital](https://karrotdigital.com). Paste source links (X, Threads, web), get bilingual summaries, draft blog posts, publish to Kit, and preview on `/posts`.
@@ -102,4 +99,3 @@ Open `/login`, sign in with `ADMIN_EMAIL`, then `/studio`.
 ## License
 
 Private — Karrot Digital.
->>>>>>> 82646ef (feat: Karrot Content Studio v1 CMS)
