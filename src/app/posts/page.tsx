@@ -13,7 +13,9 @@ export default async function PostsIndexPage() {
     <main className="mx-auto min-h-screen max-w-2xl px-6 py-12">
       <h1 className="font-display text-4xl">Karrot Digital — Posts</h1>
       <p className="mt-2 text-[var(--karrot-muted)]">
-        Public preview. Main site:{" "}
+        Public preview.{" "}
+        <Link href="/studio" className="font-semibold text-[var(--karrot-accent)]">Content Studio</Link>
+        {" · "}
         <a href="https://karrotdigital.com" className="underline">karrotdigital.com</a>
       </p>
       <ul className="mt-8 space-y-4">

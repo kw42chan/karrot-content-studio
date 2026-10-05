@@ -1,55 +1,53 @@
-import { createPost } from "@/app/actions/studio";
+import { PostsListPage } from "@/components/studio/posts-list-page";
+import type { StudioListPost } from "@/components/studio/posts-list";
 import { createClient } from "@/lib/supabase/server";
-import Link from "next/link";
-import { redirect } from "next/navigation";
+
+function channelsFromVariants(
+  rows: { channel: string; content: string }[] | null,
+): StudioListPost["channels"] {
+  const ch: StudioListPost["channels"] = ["blog"];
+  for (const row of rows ?? []) {
+    if (row.channel === "x" && row.content.trim()) ch.push("x");
+    if (row.channel === "threads" && row.content.trim()) ch.push("threads");
+    if ((row.channel === "zh" || row.channel === "en") && row.content.trim()) {
+      if (!ch.includes("instagram")) ch.push("instagram");
+    }
+  }
+  return ch;
+}
 
 export default async function StudioHomePage() {
   const supabase = await createClient();
   const { data: posts } = await supabase
     .from("studio_posts")
-    .select("id, title, slug, status, updated_at")
+    .select("id, title, slug, status, updated_at, my_take")
     .order("updated_at", { ascending: false });
 
-  async function newPost() {
-    "use server";
-    const id = await createPost();
-    redirect(`/studio/posts/${id}`);
+  const ids = (posts ?? []).map((p) => p.id);
+  const { data: variantRows } = ids.length
+    ? await supabase.from("studio_post_variants").select("post_id, channel, content").in("post_id", ids)
+    : { data: [] };
+
+  const variantsByPost = new Map<string, { channel: string; content: string }[]>();
+  for (const row of variantRows ?? []) {
+    const list = variantsByPost.get(row.post_id) ?? [];
+    list.push({ channel: row.channel as string, content: row.content as string });
+    variantsByPost.set(row.post_id, list);
   }
 
+  const listPosts: StudioListPost[] = (posts ?? []).map((p) => ({
+    id: p.id,
+    title: p.title,
+    slug: p.slug,
+    status: p.status as "draft" | "published",
+    updated_at: p.updated_at,
+    channels: channelsFromVariants(variantsByPost.get(p.id) ?? null),
+    subtitle: p.my_take ? p.my_take.slice(0, 80) : undefined,
+  }));
+
   return (
-    <main className="mx-auto min-h-screen max-w-3xl px-6 py-10">
-      <div className="flex items-center justify-between gap-4">
-        <div>
-          <h1 className="font-display text-3xl">Content Studio</h1>
-          <p className="mt-1 text-[var(--karrot-muted)]">Your drafts and published posts.</p>
-        </div>
-        <form action={newPost}>
-          <button
-            type="submit"
-            className="btn-primary px-4 py-2 text-sm"
-          >
-            New post
-          </button>
-        </form>
-      </div>
-      <ul className="mt-8 space-y-3">
-        {(posts ?? []).map((p) => (
-          <li key={p.id}>
-            <Link
-              href={`/studio/posts/${p.id}`}
-              className="flex items-center justify-between rounded-2xl border border-[var(--karrot-border)] bg-white px-5 py-4 shadow-sm"
-            >
-              <span className="font-semibold">{p.title}</span>
-              <span className="text-xs text-[var(--karrot-muted)]">{p.status}</span>
-            </Link>
-          </li>
-        ))}
-        {!posts?.length && (
-          <li className="rounded-2xl border border-dashed border-[var(--karrot-border)] p-8 text-center text-[var(--karrot-muted)]">
-            No posts yet. Create your first draft.
-          </li>
-        )}
-      </ul>
-    </main>
+    <div className="studio-list-page">
+      <PostsListPage posts={listPosts} />
+    </div>
   );
 }

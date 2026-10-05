@@ -9,7 +9,8 @@ export default function DemoStudioZhPage() {
   return (
     <PostEditor
       demoMode
-      initialTab="zh"
+      initialChannel="instagram"
+      initialLocale="zh-HK"
       post={DEMO_POST}
       sources={DEMO_SOURCES}
       suggestions={[]}

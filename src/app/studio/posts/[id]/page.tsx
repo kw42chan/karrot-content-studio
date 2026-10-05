@@ -77,6 +77,8 @@ export default async function StudioPostPage({
         social_title: post.social_title ?? null,
         social_captions: post.social_captions,
         kit_broadcast_id: post.kit_broadcast_id,
+        seo_title: post.seo_title ?? null,
+        meta_description: post.meta_description ?? null,
       }}
       sources={(orderedSources ?? []).map((s) => ({
         id: s!.id,
@@ -94,7 +96,7 @@ export default async function StudioPostPage({
         paragraph: s.paragraph,
         source_id: s.source_id,
         label: s.label ?? undefined,
-        channel: (s.channel as import("@/lib/studio/channels").StudioChannel) ?? "blog",
+        channel: (s.channel as import("@/lib/studio/channels").SuggestionChannel) ?? "blog",
       }))}
       comments={comments ?? []}
       variants={variants}

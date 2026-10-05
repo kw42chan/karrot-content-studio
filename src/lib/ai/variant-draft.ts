@@ -1,6 +1,6 @@
 import { getOpenRouterKey, getOpenRouterModel, getSiteUrl } from "@/lib/env";
 import { sourceTextForAi } from "@/lib/sources/text-for-ai";
-import type { StudioChannel } from "@/lib/studio/channels";
+import type { SuggestionChannel } from "@/lib/studio/channels";
 
 type SourceBundle = {
   author: string | null;
@@ -12,7 +12,7 @@ type SourceBundle = {
 };
 
 export async function draftVariantFromSources(params: {
-  channel: StudioChannel;
+  channel: SuggestionChannel;
   postTitle: string;
   language: "zh-HK" | "en";
   sources: SourceBundle[];
@@ -73,7 +73,7 @@ ${sourcesBlock}`;
 }
 
 export async function generateVariantFromBlog(params: {
-  channel: StudioChannel;
+  channel: SuggestionChannel;
   postTitle: string;
   blogBody: string;
   language: "zh-HK" | "en";
@@ -121,7 +121,7 @@ ${params.blogBody.slice(0, 12000)}`;
 }
 
 export async function reviseVariantFromComments(params: {
-  channel: StudioChannel;
+  channel: SuggestionChannel;
   postTitle: string;
   language: "zh-HK" | "en";
   currentContent: string;
@@ -164,7 +164,7 @@ ${joined}`;
   return parsed.paragraph;
 }
 
-function channelPrompt(channel: StudioChannel, language: "zh-HK" | "en"): string {
+function channelPrompt(channel: SuggestionChannel, language: "zh-HK" | "en"): string {
   switch (channel) {
     case "x":
       return `Channel: X (Twitter). Max 280 characters for the main post. Return JSON: { "content": "main tweet", "extra": { "thread_parts": ["optional tweet 2", ...] } }`;
@@ -180,7 +180,7 @@ function channelPrompt(channel: StudioChannel, language: "zh-HK" | "en"): string
 }
 
 function offlineVariant(
-  channel: StudioChannel,
+  channel: SuggestionChannel,
   title: string,
   snippet?: string,
 ): { content: string; extra?: { thread_parts?: string[]; social_title?: string; key_point?: string } } {

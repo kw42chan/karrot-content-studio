@@ -13,13 +13,18 @@ import {
   savePost,
   saveVariant,
 } from "@/app/actions/studio";
+import { ChannelSettingsPanel } from "@/components/studio/channel-settings-panel";
 import { SourceCard } from "@/components/studio/source-card";
+import { useStudioNav } from "@/components/studio/shell/studio-nav-context";
 import { VariantSuggestions } from "@/components/studio/variant-suggestions";
 import {
-  STUDIO_TABS,
+  DISTRIBUTION_CHANNELS,
+  suggestionChannelFor,
+  variantKeyFor,
+  type ContentLocale,
+  type DistributionChannel,
   type PostVariantRecord,
-  type StudioChannel,
-  type VariantExtra,
+  type SuggestionChannel,
 } from "@/lib/studio/channels";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -42,7 +47,7 @@ export type EditorSuggestion = {
   paragraph: string;
   source_id: string | null;
   label?: string;
-  channel?: StudioChannel;
+  channel?: SuggestionChannel;
 };
 
 export type EditorComment = {
@@ -70,9 +75,13 @@ export type EditorPost = {
   social_title: string | null;
   social_captions: { zh?: string; en?: string } | null;
   kit_broadcast_id: string | null;
+  seo_title?: string | null;
+  meta_description?: string | null;
 };
 
 type VariantState = Record<"x" | "threads" | "zh" | "en", PostVariantRecord>;
+
+type MobileStep = "sources" | "draft" | "settings";
 
 function buildInitialVariants(
   post: EditorPost,
@@ -87,6 +96,7 @@ function buildInitialVariants(
       extra: {
         social_title: post.social_title ?? post.title,
         key_point: post.key_point ?? "",
+        aspect: "square",
       },
     },
     en: fromDb.en ?? {
@@ -95,6 +105,7 @@ function buildInitialVariants(
       extra: {
         social_title: post.social_title ?? post.title,
         key_point: post.key_point ?? "",
+        aspect: "square",
       },
     },
   };
@@ -108,7 +119,8 @@ export function PostEditor({
   variants: initialVariantsFromDb,
   versions,
   demoMode = false,
-  initialTab = "blog",
+  initialChannel = "blog",
+  initialLocale,
 }: {
   post: EditorPost;
   sources: EditorSource[];
@@ -117,13 +129,21 @@ export function PostEditor({
   variants: Partial<VariantState>;
   versions: EditorVersion[];
   demoMode?: boolean;
-  initialTab?: StudioChannel;
+  initialChannel?: DistributionChannel;
+  initialLocale?: ContentLocale;
 }) {
   const router = useRouter();
+  const studioNav = useStudioNav();
   const [pending, start] = useTransition();
-  const [activeTab, setActiveTab] = useState<StudioChannel>(initialTab);
+  const [activeChannel, setActiveChannel] = useState<DistributionChannel>(initialChannel);
+  const [contentLocale, setContentLocale] = useState<ContentLocale>(
+    initialLocale ?? post.body_language,
+  );
+  const [mobileStep, setMobileStep] = useState<MobileStep>("draft");
   const [title, setTitle] = useState(post.title);
   const [slug, setSlug] = useState(post.slug);
+  const [seoTitle, setSeoTitle] = useState(post.seo_title ?? post.title);
+  const [metaDescription, setMetaDescription] = useState(post.meta_description ?? "");
   const [myTake, setMyTake] = useState(post.my_take);
   const [body, setBody] = useState(post.body);
   const [lang, setLang] = useState(post.body_language);
@@ -140,36 +160,42 @@ export function PostEditor({
   const [localSuggestions, setLocalSuggestions] = useState(suggestions);
   const [ogTick, setOgTick] = useState(0);
 
+  const igStorage = contentLocale === "zh-HK" ? "zh" : "en";
+  const igAspect = variants[igStorage].extra.aspect ?? "square";
+
   useEffect(() => {
     setLocalSuggestions(suggestions);
   }, [suggestions]);
   useEffect(() => {
     setComments(initialComments);
   }, [initialComments]);
-
   useEffect(() => {
     setVariants(buildInitialVariants(post, initialVariantsFromDb));
   }, [initialVariantsFromDb, post]);
 
+  useEffect(() => {
+    if (activeChannel === "blog") {
+      setLang(contentLocale);
+    }
+  }, [activeChannel, contentLocale]);
+
+  const suggestionChannel = suggestionChannelFor(activeChannel, contentLocale);
+  const tabSuggestions = useMemo(
+    () => localSuggestions.filter((s) => (s.channel ?? "blog") === suggestionChannel),
+    [localSuggestions, suggestionChannel],
+  );
+
   const bodyDisplay = useMemo(() => stripSourcesForEditor(body), [body]);
   const creditsBlock = useMemo(() => extractSourcesBlock(body), [body]);
 
-  const tabSuggestions = useMemo(
-    () => localSuggestions.filter((s) => (s.channel ?? "blog") === activeTab),
-    [localSuggestions, activeTab],
-  );
-
-  const ogTitle =
-    activeTab === "zh" || activeTab === "en"
-      ? variants[activeTab].extra.social_title ?? title
-      : variants.zh.extra.social_title ?? title;
-  const ogKey =
-    activeTab === "zh" || activeTab === "en"
-      ? variants[activeTab].extra.key_point ?? ""
-      : variants.zh.extra.key_point ?? "";
+  const ogTitle = variants[igStorage].extra.social_title ?? title;
+  const ogKey = variants[igStorage].extra.key_point ?? "";
   const socialTitleEnc = encodeURIComponent(ogTitle);
   const socialKeyEnc = encodeURIComponent(ogKey);
   const squareOg = `/api/og/social?title=${socialTitleEnc}&keyPoint=${socialKeyEnc}&format=square&v=${ogTick}`;
+  const portraitOg = `/api/og/social?title=${socialTitleEnc}&keyPoint=${socialKeyEnc}&format=portrait&v=${ogTick}`;
+
+  const postsHref = demoMode ? "/demo/studio" : "/studio";
 
   function notify(text: string, isError = false) {
     setMessage(text);
@@ -207,13 +233,17 @@ export function PostEditor({
     if (channel === "zh" || channel === "en") setOgTick((t) => t + 1);
   }
 
+  function draftChannel(): SuggestionChannel {
+    return suggestionChannelFor(activeChannel, contentLocale);
+  }
+
   async function handleSave() {
     if (demoMode) {
       notify("Demo only — connect Supabase to save.", true);
       return;
     }
     start(async () => {
-      if (activeTab === "blog") {
+      if (activeChannel === "blog") {
         const result = await savePost({
           id: post.id,
           title,
@@ -225,13 +255,16 @@ export function PostEditor({
           key_point: variants.zh.extra.key_point,
           social_title: variants.zh.extra.social_title,
           social_captions: { zh: variants.zh.content, en: variants.en.content },
+          seo_title: seoTitle,
+          meta_description: metaDescription,
         });
         if (!result.ok) {
           notify(result.error, true);
           return;
         }
       } else {
-        const ch = activeTab as "x" | "threads" | "zh" | "en";
+        const ch = variantKeyFor(activeChannel, contentLocale);
+        if (!ch) return;
         const result = await saveVariant({
           postId: post.id,
           channel: ch,
@@ -243,7 +276,7 @@ export function PostEditor({
           return;
         }
       }
-      notify(`Saved ${STUDIO_TABS.find((t) => t.id === activeTab)?.label ?? activeTab}`);
+      notify("Saved");
       router.refresh();
     });
   }
@@ -256,46 +289,71 @@ export function PostEditor({
   const xChars = variants.x.content.length;
   const threadsChars = variants.threads.content.length;
 
+  const variantKey = variantKeyFor(activeChannel, contentLocale);
+  const variantContent = variantKey ? variants[variantKey].content : "";
+  const showGenerateEmpty =
+    activeChannel !== "blog" && !variantContent.trim();
+
   return (
-    <div className="studio-root">
-      <header className="studio-top">
-        <div className="studio-top-inner">
-          <div className="studio-brand">Content Studio</div>
-          <div className="studio-crumb">
-            Posts / <strong>{title}</strong>
+    <div className="studio-editor-page">
+      <header className="studio-editor-topbar">
+        <div className="studio-editor-topbar-left">
+          <button
+            type="button"
+            className="studio-hamburger studio-hamburger-btn"
+            aria-label="Open menu"
+            onClick={() => studioNav?.openDrawer()}
+          >
+            ☰
+          </button>
+          <div className="studio-crumb-row">
+            <span className="studio-editing-label md:hidden">Editing</span>
+            <div className="studio-crumb">
+              <Link href={postsHref}>Posts</Link>
+              <span className="studio-crumb-sep">/</span>
+              <span className="studio-crumb-title">{title}</span>
+            </div>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="studio-status">
-              {post.status === "published" ? "Published" : "Draft"}
-            </span>
-            <Link
-              href={demoMode ? "/demo/post" : `/posts/${slug}`}
-              className="studio-btn studio-btn-ghost hidden sm:inline-flex"
-            >
-              Preview
-            </Link>
-            <button type="button" disabled={pending} className="studio-btn studio-btn-ghost" onClick={handleSave}>
-              Save {STUDIO_TABS.find((t) => t.id === activeTab)?.label}
-            </button>
-            <button
-              type="button"
-              className="studio-btn studio-btn-black"
-              onClick={() =>
-                run(async () => {
-                  await publishPostToKit(post.id, publishMode, confirmEmail);
-                  notify("Published to Kit");
-                })
-              }
-            >
-              Publish
-            </button>
-          </div>
+          <span
+            className={`studio-status ${post.status === "published" ? "studio-status-published" : ""}`}
+          >
+            {post.status === "published" ? "Published" : "Draft"}
+          </span>
+        </div>
+        <div className="studio-editor-topbar-actions">
+          <Link
+            href={demoMode ? "/demo/post" : `/posts/${slug}`}
+            className="studio-btn studio-btn-ghost hidden sm:inline-flex"
+          >
+            Preview
+          </Link>
+          <button
+            type="button"
+            disabled={pending}
+            className="studio-btn studio-btn-ghost hidden xs:inline-flex"
+            onClick={handleSave}
+          >
+            Save
+          </button>
+          <button
+            type="button"
+            className="studio-btn studio-btn-primary"
+            disabled={pending}
+            onClick={() =>
+              run(async () => {
+                await publishPostToKit(post.id, publishMode, confirmEmail);
+                notify("Published to Kit");
+              })
+            }
+          >
+            Publish
+          </button>
         </div>
       </header>
 
       {message && (
         <p
-          className={`mx-auto max-w-[1320px] px-6 pt-3 text-sm ${
+          className={`studio-editor-message text-sm ${
             messageIsError ? "font-medium text-red-700" : "text-[var(--karrot-muted)]"
           }`}
         >
@@ -303,8 +361,56 @@ export function PostEditor({
         </p>
       )}
 
-      <div className="studio-shell">
-        <aside className="studio-panel studio-sources-col">
+      <div className="studio-channel-bar">
+        <div className="studio-channels" role="tablist">
+          {DISTRIBUTION_CHANNELS.map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              role="tab"
+              aria-selected={activeChannel === tab.id}
+              className={`studio-channel-tab ${activeChannel === tab.id ? "active" : ""}`}
+              onClick={() => setActiveChannel(tab.id)}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+        <p className="studio-channel-hint hidden lg:block">
+          Right panel updates with channel · {activeChannel} settings
+        </p>
+      </div>
+
+      <div className="studio-mobile-channels md:hidden">
+        {DISTRIBUTION_CHANNELS.map((tab) => (
+          <button
+            key={tab.id}
+            type="button"
+            className={`studio-channel-chip ${activeChannel === tab.id ? "active" : ""}`}
+            onClick={() => setActiveChannel(tab.id)}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      <div className="studio-mobile-segments md:hidden" role="tablist">
+        {(["sources", "draft", "settings"] as MobileStep[]).map((step) => (
+          <button
+            key={step}
+            type="button"
+            role="tab"
+            aria-selected={mobileStep === step}
+            className={mobileStep === step ? "active" : ""}
+            onClick={() => setMobileStep(step)}
+          >
+            {step === "sources" ? "Sources" : step === "draft" ? "Draft" : "Settings"}
+          </button>
+        ))}
+      </div>
+
+      <div className={`studio-shell studio-shell-step-${mobileStep}`}>
+        <aside className="studio-panel studio-sources-col studio-panel-sources">
           <div className="studio-panel-h">
             <span>Sources</span>
             <span className="text-xs font-normal text-[var(--karrot-muted)]">
@@ -340,30 +446,37 @@ export function PostEditor({
           </div>
         </aside>
 
-        <main className="studio-panel studio-editor-col studio-editor-main">
+        <main className="studio-panel studio-editor-col studio-panel-draft">
           <input
             className="studio-title-input"
             value={title}
             onChange={(e) => setTitle(e.target.value)}
             readOnly={demoMode}
           />
-          <div className="studio-tabs-sticky">
-            <div className="studio-tabs">
-              {STUDIO_TABS.map((tab) => (
-                <button
-                  key={tab.id}
-                  type="button"
-                  className={`studio-tab ${activeTab === tab.id ? "studio-tab-active" : ""}`}
-                  onClick={() => setActiveTab(tab.id)}
-                >
-                  {tab.label}
-                </button>
-              ))}
+          <div className="studio-lang-bar">
+            <span className="studio-lang-label">Language</span>
+            <div className="studio-seg" role="tablist">
+              <button
+                type="button"
+                role="tab"
+                aria-selected={contentLocale === "zh-HK"}
+                onClick={() => setContentLocale("zh-HK")}
+              >
+                中文
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={contentLocale === "en"}
+                onClick={() => setContentLocale("en")}
+              >
+                English
+              </button>
             </div>
           </div>
 
-          <div className="p-6">
-            {activeTab === "blog" && (
+          <div className="studio-editor-body p-6">
+            {activeChannel === "blog" && (
               <>
                 <div className="mb-6">
                   <h3 className="studio-block-label">My take</h3>
@@ -429,7 +542,7 @@ export function PostEditor({
                   }
                   onApply={() =>
                     run(async () => {
-                      await applyPostComments(post.id, activeTab);
+                      await applyPostComments(post.id, draftChannel());
                       notify("Applied comments — review the suggestion");
                     })
                   }
@@ -437,46 +550,91 @@ export function PostEditor({
               </>
             )}
 
-            {activeTab === "x" && (
+            {activeChannel === "x" && (
+              <VariantChannelEditor
+                label="X post"
+                content={variants.x.content}
+                onChange={(c) => updateVariant("x", { content: c })}
+                charLimit={280}
+                charCount={xChars}
+                onCopy={() => copyText(variants.x.content)}
+                showGenerate={showGenerateEmpty}
+                onGenerate={() => run(() => generateVariantFromBlogAction(post.id, "x"))}
+                suggestions={tabSuggestions}
+                demoMode={demoMode}
+                run={run}
+              />
+            )}
+
+            {activeChannel === "threads" && (
+              <VariantChannelEditor
+                label="Threads post"
+                content={variants.threads.content}
+                onChange={(c) => updateVariant("threads", { content: c })}
+                charLimit={500}
+                charCount={threadsChars}
+                onCopy={() => copyText(variants.threads.content)}
+                showGenerate={showGenerateEmpty}
+                onGenerate={() => run(() => generateVariantFromBlogAction(post.id, "threads"))}
+                suggestions={tabSuggestions}
+                demoMode={demoMode}
+                run={run}
+              />
+            )}
+
+            {activeChannel === "instagram" && (
               <div>
-                <h3 className="studio-block-label">X post</h3>
-                <textarea
-                  className="w-full rounded-xl border border-[var(--karrot-border)] p-3 text-base leading-relaxed"
-                  rows={5}
-                  value={variants.x.content}
-                  onChange={(e) => updateVariant("x", { content: e.target.value })}
-                />
-                <p className={`mt-1 text-xs ${xChars > 280 ? "font-semibold text-red-700" : "text-[var(--karrot-muted)]"}`}>
-                  {xChars} / 280 characters
-                </p>
-                <button type="button" className="mt-2 text-xs font-semibold text-[var(--karrot-accent)]" onClick={() => copyText(variants.x.content)}>
-                  Copy X post
-                </button>
-                <p className="mt-4 text-xs font-semibold text-[var(--karrot-muted)]">Thread (optional)</p>
-                {(variants.x.extra.thread_parts ?? []).map((part, i) => (
-                  <textarea
-                    key={i}
-                    className="mb-2 w-full rounded-lg border border-[var(--karrot-border)] p-2 text-sm"
-                    rows={2}
-                    value={part}
-                    onChange={(e) => {
-                      const parts = [...(variants.x.extra.thread_parts ?? [])];
-                      parts[i] = e.target.value;
-                      updateVariant("x", { extra: { thread_parts: parts } });
-                    }}
-                  />
-                ))}
-                <button
-                  type="button"
-                  className="studio-btn studio-btn-ghost mt-1 h-8 text-xs"
-                  onClick={() =>
-                    updateVariant("x", {
-                      extra: { thread_parts: [...(variants.x.extra.thread_parts ?? []), ""] },
-                    })
-                  }
-                >
-                  Add thread tweet
-                </button>
+                {showGenerateEmpty ? (
+                  <div className="studio-generate-empty">
+                    <p>No {contentLocale === "zh-HK" ? "中文" : "English"} caption yet.</p>
+                    <button
+                      type="button"
+                      className="studio-btn studio-btn-primary"
+                      onClick={() =>
+                        run(() => generateVariantFromBlogAction(post.id, igStorage))
+                      }
+                    >
+                      Generate from blog
+                    </button>
+                  </div>
+                ) : (
+                  <>
+                    <label className="studio-field">
+                      Image headline (Anton)
+                      <input
+                        value={variants[igStorage].extra.social_title ?? ""}
+                        onChange={(e) =>
+                          updateVariant(igStorage, { extra: { social_title: e.target.value } })
+                        }
+                      />
+                    </label>
+                    <label className="studio-field">
+                      Key point (Roboto)
+                      <input
+                        value={variants[igStorage].extra.key_point ?? ""}
+                        onChange={(e) =>
+                          updateVariant(igStorage, { extra: { key_point: e.target.value } })
+                        }
+                      />
+                    </label>
+                    <label className="mb-1 mt-3 block text-xs font-semibold text-[var(--karrot-muted)]">
+                      Caption
+                    </label>
+                    <textarea
+                      rows={6}
+                      className="w-full rounded-lg border border-[var(--karrot-border)] p-3 text-sm leading-relaxed"
+                      value={variants[igStorage].content}
+                      onChange={(e) => updateVariant(igStorage, { content: e.target.value })}
+                    />
+                    <button
+                      type="button"
+                      className="mt-2 text-xs font-semibold text-[var(--karrot-accent)]"
+                      onClick={() => copyText(variants[igStorage].content)}
+                    >
+                      Copy caption
+                    </button>
+                  </>
+                )}
                 <VariantSuggestions
                   suggestions={tabSuggestions}
                   demoMode={demoMode}
@@ -484,189 +642,130 @@ export function PostEditor({
                   onEdit={(id, text) => run(() => resolveSuggestion(id, "accept", text))}
                   onDismiss={(id) => run(() => resolveSuggestion(id, "dismiss"))}
                 />
-                <div className="mt-4 flex flex-wrap gap-2">
+                {!showGenerateEmpty && (
                   <button
                     type="button"
-                    className="studio-btn studio-btn-primary h-8 text-xs"
-                    onClick={() => run(() => generateVariantFromBlogAction(post.id, "x"))}
+                    className="studio-btn studio-btn-primary mt-4 h-8 text-xs"
+                    onClick={() => run(() => generateVariantFromBlogAction(post.id, igStorage))}
                   >
-                    Generate from blog
+                    Regenerate from blog
                   </button>
-                </div>
-              </div>
-            )}
-
-            {activeTab === "threads" && (
-              <div>
-                <h3 className="studio-block-label">Threads post</h3>
-                <textarea
-                  className="w-full rounded-xl border border-[var(--karrot-border)] p-3 text-base leading-relaxed"
-                  rows={8}
-                  value={variants.threads.content}
-                  onChange={(e) => updateVariant("threads", { content: e.target.value })}
-                />
-                <p className={`mt-1 text-xs ${threadsChars > 500 ? "font-semibold text-red-700" : "text-[var(--karrot-muted)]"}`}>
-                  {threadsChars} / 500 characters
-                </p>
-                <button type="button" className="mt-2 text-xs font-semibold text-[var(--karrot-accent)]" onClick={() => copyText(variants.threads.content)}>
-                  Copy Threads post
-                </button>
-                <VariantSuggestions
-                  suggestions={tabSuggestions}
-                  demoMode={demoMode}
-                  onAccept={(id) => run(() => resolveSuggestion(id, "accept"))}
-                  onEdit={(id, text) => run(() => resolveSuggestion(id, "accept", text))}
-                  onDismiss={(id) => run(() => resolveSuggestion(id, "dismiss"))}
-                />
-                <button
-                  type="button"
-                  className="studio-btn studio-btn-primary mt-4 h-8 text-xs"
-                  onClick={() => run(() => generateVariantFromBlogAction(post.id, "threads"))}
-                >
-                  Generate from blog
-                </button>
-              </div>
-            )}
-
-            {(activeTab === "zh" || activeTab === "en") && (
-              <div>
-                <h3 className="studio-block-label">
-                  {activeTab === "zh" ? "Instagram / Facebook · 中文" : "Instagram / Facebook · English"}
-                </h3>
-                <label className="studio-field">
-                  Image headline (Anton)
-                  <input
-                    value={variants[activeTab].extra.social_title ?? ""}
-                    onChange={(e) =>
-                      updateVariant(activeTab, { extra: { social_title: e.target.value } })
-                    }
-                  />
-                </label>
-                <label className="studio-field">
-                  Key point (Roboto)
-                  <input
-                    value={variants[activeTab].extra.key_point ?? ""}
-                    onChange={(e) =>
-                      updateVariant(activeTab, { extra: { key_point: e.target.value } })
-                    }
-                  />
-                </label>
-                <label className="mb-1 mt-3 block text-xs font-semibold text-[var(--karrot-muted)]">
-                  Caption
-                </label>
-                <textarea
-                  rows={6}
-                  className="w-full rounded-lg border border-[var(--karrot-border)] p-3 text-sm leading-relaxed"
-                  value={variants[activeTab].content}
-                  onChange={(e) => updateVariant(activeTab, { content: e.target.value })}
-                />
-                <button
-                  type="button"
-                  className="mt-2 text-xs font-semibold text-[var(--karrot-accent)]"
-                  onClick={() => copyText(variants[activeTab].content)}
-                >
-                  Copy caption
-                </button>
-                <div className="mt-4 overflow-hidden rounded-lg border border-[var(--karrot-border)]">
-                  <img src={squareOg} alt="Social preview" className="w-full" />
-                </div>
-                <VariantSuggestions
-                  suggestions={tabSuggestions}
-                  demoMode={demoMode}
-                  onAccept={(id) => run(() => resolveSuggestion(id, "accept"))}
-                  onEdit={(id, text) => run(() => resolveSuggestion(id, "accept", text))}
-                  onDismiss={(id) => run(() => resolveSuggestion(id, "dismiss"))}
-                />
-                <button
-                  type="button"
-                  className="studio-btn studio-btn-primary mt-4 h-8 text-xs"
-                  onClick={() => run(() => generateVariantFromBlogAction(post.id, activeTab))}
-                >
-                  Generate from blog
-                </button>
+                )}
               </div>
             )}
           </div>
         </main>
 
-        <aside className="studio-panel studio-aside-settings">
-          <div className="studio-panel-h">Post settings</div>
-          <div className="studio-panel-b flex flex-col gap-4">
-            <div className="studio-field">
-              <label>Body language</label>
-              <select
-                value={lang}
-                onChange={(e) => setLang(e.target.value as "zh-HK" | "en")}
-                disabled={demoMode}
-              >
-                <option value="zh-HK">中文</option>
-                <option value="en">English</option>
-              </select>
-            </div>
-            <div className="studio-field">
-              <label>URL slug</label>
-              <input value={slug} onChange={(e) => setSlug(e.target.value)} readOnly={demoMode} />
-            </div>
-            <div className="studio-field">
-              <label>Publish to Kit</label>
-              <select
-                value={publishMode}
-                onChange={(e) => setPublishMode(e.target.value as "web_only" | "web_and_email")}
-              >
-                <option value="web_only">Web only</option>
-                <option value="web_and_email">Web and email my list</option>
-              </select>
-            </div>
-            {publishMode === "web_and_email" && (
-              <label className="flex items-start gap-2 text-xs leading-snug">
-                <input
-                  type="checkbox"
-                  checked={confirmEmail}
-                  onChange={(e) => setConfirmEmail(e.target.checked)}
-                  className="mt-0.5"
-                />
-                I confirm sending this to my email list
-              </label>
-            )}
-            <div className="studio-ai-box">
-              <p>
-                Draft for the <strong>{STUDIO_TABS.find((t) => t.id === activeTab)?.label}</strong>{" "}
-                tab from attached sources. My take is never changed automatically.
-              </p>
-              <button
-                type="button"
-                disabled={pending}
-                className="studio-btn studio-btn-primary"
-                onClick={() => run(() => draftPostWithAi(post.id, activeTab))}
-              >
-                Draft from sources
-              </button>
-            </div>
-            {versions.length > 0 && !demoMode && (
-              <div>
-                <p className="mb-2 text-xs font-semibold">Blog versions</p>
-                <ul className="space-y-2 text-xs">
-                  {versions.slice(0, 5).map((v) => (
-                    <li key={v.id} className="flex justify-between gap-2">
-                      <span className="truncate">{new Date(v.created_at).toLocaleString()}</span>
-                      <button
-                        type="button"
-                        className="font-semibold text-[var(--karrot-accent)]"
-                        onClick={() => run(() => restoreVersion(v.id))}
-                      >
-                        Restore
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-            {post.kit_broadcast_id && (
-              <p className="text-xs text-[var(--karrot-muted)]">Kit: {post.kit_broadcast_id}</p>
-            )}
-          </div>
-        </aside>
+        <ChannelSettingsPanel
+          channel={activeChannel}
+          locale={contentLocale}
+          post={post}
+          slug={slug}
+          setSlug={setSlug}
+          seoTitle={seoTitle}
+          setSeoTitle={setSeoTitle}
+          metaDescription={metaDescription}
+          setMetaDescription={setMetaDescription}
+          publishMode={publishMode}
+          setPublishMode={setPublishMode}
+          confirmEmail={confirmEmail}
+          setConfirmEmail={setConfirmEmail}
+          xChars={xChars}
+          threadsChars={threadsChars}
+          threadParts={variants.x.extra.thread_parts ?? []}
+          onAddThreadPart={() =>
+            updateVariant("x", {
+              extra: { thread_parts: [...(variants.x.extra.thread_parts ?? []), ""] },
+            })
+          }
+          onUpdateThreadPart={(i, v) => {
+            const parts = [...(variants.x.extra.thread_parts ?? [])];
+            parts[i] = v;
+            updateVariant("x", { extra: { thread_parts: parts } });
+          }}
+          igAspect={igAspect}
+          setIgAspect={(a) => updateVariant(igStorage, { extra: { aspect: a } })}
+          squareOg={squareOg}
+          portraitOg={portraitOg}
+          onDownloadOg={(url, name) => {
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = name;
+            a.click();
+          }}
+          demoMode={demoMode}
+          pending={pending}
+          onDraftFromSources={() => run(() => draftPostWithAi(post.id, draftChannel()))}
+          versions={versions}
+          onRestoreVersion={(id) => run(() => restoreVersion(id))}
+        />
       </div>
+    </div>
+  );
+}
+
+function VariantChannelEditor({
+  label,
+  content,
+  onChange,
+  charLimit,
+  charCount,
+  onCopy,
+  showGenerate,
+  onGenerate,
+  suggestions,
+  demoMode,
+  run,
+}: {
+  label: string;
+  content: string;
+  onChange: (c: string) => void;
+  charLimit: number;
+  charCount: number;
+  onCopy: () => void;
+  showGenerate: boolean;
+  onGenerate: () => void;
+  suggestions: EditorSuggestion[];
+  demoMode: boolean;
+  run: (fn: () => Promise<void>) => void;
+}) {
+  if (showGenerate) {
+    return (
+      <div className="studio-generate-empty">
+        <p>No draft for this channel yet.</p>
+        <button type="button" className="studio-btn studio-btn-primary" onClick={onGenerate}>
+          Generate from blog
+        </button>
+      </div>
+    );
+  }
+  return (
+    <div>
+      <h3 className="studio-block-label">{label}</h3>
+      <textarea
+        className="w-full rounded-xl border border-[var(--karrot-border)] p-3 text-base leading-relaxed"
+        rows={8}
+        value={content}
+        onChange={(e) => onChange(e.target.value)}
+      />
+      <p
+        className={`mt-1 text-xs md:hidden ${charCount > charLimit ? "font-semibold text-red-700" : "text-[var(--karrot-muted)]"}`}
+      >
+        {charCount} / {charLimit} characters
+      </p>
+      <button type="button" className="mt-2 text-xs font-semibold text-[var(--karrot-accent)]" onClick={onCopy}>
+        Copy
+      </button>
+      <VariantSuggestions
+        suggestions={suggestions}
+        demoMode={demoMode}
+        onAccept={(id) => run(() => resolveSuggestion(id, "accept"))}
+        onEdit={(id, text) => run(() => resolveSuggestion(id, "accept", text))}
+        onDismiss={(id) => run(() => resolveSuggestion(id, "dismiss"))}
+      />
+      <button type="button" className="studio-btn studio-btn-primary mt-4 h-8 text-xs" onClick={onGenerate}>
+        Regenerate from blog
+      </button>
     </div>
   );
 }
@@ -703,7 +802,11 @@ function CommentsSection({
             <div className="mt-1 flex justify-between text-[11px] text-[var(--karrot-muted)]">
               <span>{new Date(c.created_at).toLocaleString()}</span>
               {!c.resolved && (
-                <button type="button" className="font-semibold text-[var(--karrot-accent)]" onClick={() => onResolve(c.id)}>
+                <button
+                  type="button"
+                  className="font-semibold text-[var(--karrot-accent)]"
+                  onClick={() => onResolve(c.id)}
+                >
                   Mark resolved
                 </button>
               )}
@@ -720,10 +823,20 @@ function CommentsSection({
         disabled={demoMode}
       />
       <div className="flex flex-wrap gap-2">
-        <button type="button" className="studio-btn studio-btn-ghost h-8 text-xs" disabled={demoMode || !commentInput.trim()} onClick={onAdd}>
+        <button
+          type="button"
+          className="studio-btn studio-btn-ghost h-8 text-xs"
+          disabled={demoMode || !commentInput.trim()}
+          onClick={onAdd}
+        >
           Add comment
         </button>
-        <button type="button" className="studio-btn studio-btn-primary h-8 text-xs" disabled={demoMode} onClick={onApply}>
+        <button
+          type="button"
+          className="studio-btn studio-btn-primary h-8 text-xs"
+          disabled={demoMode}
+          onClick={onApply}
+        >
           Apply comments
         </button>
       </div>

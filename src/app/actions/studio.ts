@@ -12,7 +12,7 @@ import {
   generateVariantFromBlog,
   reviseVariantFromComments,
 } from "@/lib/ai/variant-draft";
-import type { StudioChannel, VariantExtra } from "@/lib/studio/channels";
+import type { SuggestionChannel, VariantExtra } from "@/lib/studio/channels";
 import { publishToKit, type KitPublishMode } from "@/lib/kit/client";
 import { renderKitPostHtml } from "@/lib/kit/render-post-html";
 import {
@@ -189,6 +189,8 @@ export async function savePost(input: {
   key_point?: string;
   social_title?: string;
   social_captions?: { zh?: string; en?: string };
+  seo_title?: string;
+  meta_description?: string;
 }): Promise<SavePostResult> {
   try {
     const supabase = await requireAdmin();
@@ -207,6 +209,8 @@ export async function savePost(input: {
       key_point: input.key_point ?? null,
       social_title: input.social_title ?? null,
       social_captions: input.social_captions ?? null,
+      seo_title: input.seo_title ?? null,
+      meta_description: input.meta_description ?? null,
       published_at: input.status === "published" ? new Date().toISOString() : null,
     };
 
@@ -335,7 +339,7 @@ export async function saveVariant(input: {
   }
 }
 
-export async function applyPostComments(postId: string, channel: StudioChannel) {
+export async function applyPostComments(postId: string, channel: SuggestionChannel) {
   const supabase = await requireAdmin();
   const { data: comments } = await supabase
     .from("studio_post_comments")
@@ -395,7 +399,7 @@ export async function applyPostComments(postId: string, channel: StudioChannel) 
   revalidatePath(`/studio/posts/${postId}`);
 }
 
-export async function draftPostWithAi(postId: string, channel: StudioChannel) {
+export async function draftPostWithAi(postId: string, channel: SuggestionChannel) {
   const supabase = await requireAdmin();
   const { data: post } = await supabase.from("studio_posts").select("*").eq("id", postId).single();
   if (!post) throw new Error("Post not found");
@@ -457,7 +461,7 @@ export async function draftPostWithAi(postId: string, channel: StudioChannel) {
   revalidatePath(`/studio/posts/${postId}`);
 }
 
-export async function generateVariantFromBlogAction(postId: string, channel: StudioChannel) {
+export async function generateVariantFromBlogAction(postId: string, channel: SuggestionChannel) {
   if (channel === "blog") throw new Error("Use blog tab only");
   const supabase = await requireAdmin();
   const { data: post } = await supabase.from("studio_posts").select("*").eq("id", postId).single();
@@ -513,7 +517,7 @@ export async function resolveSuggestion(
   if (!post) throw new Error("Post missing");
 
   const paragraph = editedText ?? (sug.paragraph as string);
-  const channel = (sug.channel as StudioChannel) ?? "blog";
+  const channel = (sug.channel as SuggestionChannel) ?? "blog";
   const extra = (sug.extra as VariantExtra & { social_captions?: { zh?: string; en?: string } }) ?? {};
 
   if (channel === "blog") {

@@ -5,11 +5,12 @@ import {
   DEMO_VARIANTS,
 } from "@/lib/demo/content";
 
-export default function DemoStudioXPage() {
+export default function DemoStudioInstagramPage() {
   return (
     <PostEditor
       demoMode
-      initialChannel="x"
+      initialChannel="instagram"
+      initialLocale="zh-HK"
       post={DEMO_POST}
       sources={DEMO_SOURCES}
       suggestions={[]}
