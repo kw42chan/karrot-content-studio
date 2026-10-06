@@ -25,4 +25,10 @@ describe("friendlyCallbackError", () => {
   it("maps expired links", () => {
     expect(friendlyCallbackError("otp_expired", null)).toContain("expired");
   });
+
+  it("maps disallowed accounts", () => {
+    expect(friendlyCallbackError("not_allowed", "This account isn't allowed")).toContain(
+      "isn't allowed",
+    );
+  });
 });

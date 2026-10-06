@@ -1,5 +1,6 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
+import { sessionEmail } from "@/lib/auth/session-email";
 import { getAdminEmail } from "@/lib/env";
 
 export async function updateSession(request: NextRequest) {
@@ -38,7 +39,7 @@ export async function updateSession(request: NextRequest) {
       url.searchParams.set("next", path);
       return NextResponse.redirect(url);
     }
-    if (user.email?.toLowerCase() !== getAdminEmail().toLowerCase()) {
+    if (sessionEmail(user) !== getAdminEmail().toLowerCase()) {
       const url = request.nextUrl.clone();
       url.pathname = "/login";
       url.searchParams.set("error", "not_admin");

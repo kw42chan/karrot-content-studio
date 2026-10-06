@@ -47,7 +47,11 @@ export function friendlyCallbackError(reason: string | null, description: string
     return "Sign-in could not finish because the redirect URL is not allowed. Check NEXT_PUBLIC_SITE_URL and Supabase Auth redirect URLs.";
   }
 
+  if (r === "not_allowed" || d.includes("isn't allowed") || d.includes("is not allowed")) {
+    return "This account isn't allowed";
+  }
+
   if (description) return description;
   if (reason) return reason.replace(/_/g, " ");
-  return "Sign-in could not be completed. Please request a new login link.";
+  return "Sign-in could not be completed. Please try again.";
 }

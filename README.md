@@ -51,14 +51,18 @@ supabase db push
 - If `ADMIN_EMAIL` is not `darwin.chankawing@gmail.com`, edit `public.studio_admin_email()` in the first migration before applying.
 - Apply migrations in timestamp order (`20261005080000` then `20261005090000`).
 
-### 4. Supabase Auth
+### 4. Google sign-in (Supabase Auth)
 
-In **Authentication → URL configuration**, add:
+1. **Google Cloud Console** → APIs & Services → Credentials → Create **OAuth client ID** (Web application).
+   - **Authorized redirect URI:** `https://gmfzwuunaqzutbhudsxn.supabase.co/auth/v1/callback`
+2. **Supabase** → Authentication → Providers → **Google** → Enable and paste the **Client ID** and **Client secret**.
+3. **Authentication → URL configuration:**
+   - **Site URL:** production URL (or `http://localhost:3000` for local)
+   - **Redirect URLs:** `http://localhost:3000/auth/callback`, `https://<your-vercel-domain>/auth/callback`, and each `https://<preview>.vercel.app/auth/callback` you use
 
-- **Site URL:** your production URL (or `http://localhost:3000` for local)
-- **Redirect URLs:** `http://localhost:3000/auth/callback`, `https://<your-vercel-domain>/auth/callback`
+Only the email in `ADMIN_EMAIL` may use `/studio` (enforced in `/auth/callback`, middleware, and `studio_is_admin()` RLS).
 
-Enable **Email** provider (magic link).
+On Vercel **preview** deployments (`*.vercel.app`), the app uses `window.location.origin` for OAuth `redirectTo` so previews work without changing `NEXT_PUBLIC_SITE_URL`.
 
 ### 5. Vercel
 
@@ -70,7 +74,7 @@ Create a project from this repo and set the same env vars. Deploy.
 npm run dev
 ```
 
-Open `/login`, sign in with `ADMIN_EMAIL`, then `/studio`.
+Open `/login`, **Sign in with Google** using the `ADMIN_EMAIL` Google account, then `/studio`.
 
 ## Scripts
 
@@ -82,7 +86,7 @@ Open `/login`, sign in with `ADMIN_EMAIL`, then `/studio`.
 
 ## Features (v1)
 
-- Magic-link auth; `/studio` restricted to admin email
+- Google OAuth sign-in; `/studio` restricted to `ADMIN_EMAIL`
 - Source readers: X (fxtwitter), Threads (og tags), web (Readability)
 - Bilingual summaries (fixtures for three test URLs when OpenRouter is unset during summarize — production should set the key)
 - Posts with My take, AI draft, version history, enrichment suggestions

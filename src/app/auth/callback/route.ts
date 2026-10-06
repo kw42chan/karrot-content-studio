@@ -1,7 +1,9 @@
+import { serverAuthRedirectBaseUrl } from "@/lib/auth/site-url";
+import { sessionEmail } from "@/lib/auth/session-email";
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
-import { getSiteUrl } from "@/lib/env";
+import { getAdminEmail } from "@/lib/env";
 
 function errorRedirect(origin: string, reason: string, description?: string) {
   const url = new URL("/auth/error", origin);
@@ -12,7 +14,7 @@ function errorRedirect(origin: string, reason: string, description?: string) {
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
-  const origin = getSiteUrl().replace(/\/$/, "") || new URL(request.url).origin;
+  const origin = serverAuthRedirectBaseUrl(request.url);
   const next = searchParams.get("next") ?? "/studio";
 
   const oauthError = searchParams.get("error");
@@ -47,6 +49,16 @@ export async function GET(request: Request) {
   const { error } = await supabase.auth.exchangeCodeForSession(code);
   if (error) {
     return errorRedirect(origin, error.code ?? "exchange_failed", error.message);
+  }
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  const email = sessionEmail(user);
+  if (email !== getAdminEmail().toLowerCase()) {
+    await supabase.auth.signOut();
+    return errorRedirect(origin, "not_allowed", "This account isn't allowed");
   }
 
   const safeNext = next.startsWith("/") ? next : "/studio";
