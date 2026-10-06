@@ -1,5 +1,5 @@
 import { serverAuthRedirectBaseUrl } from "@/lib/auth/site-url";
-import { sessionEmail } from "@/lib/auth/session-email";
+import { isAdminSession } from "@/lib/auth/session-email";
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
@@ -55,8 +55,7 @@ export async function GET(request: Request) {
     data: { user },
   } = await supabase.auth.getUser();
 
-  const email = sessionEmail(user);
-  if (email !== getAdminEmail().toLowerCase()) {
+  if (!isAdminSession(user, getAdminEmail())) {
     await supabase.auth.signOut();
     return errorRedirect(origin, "not_allowed", "This account isn't allowed");
   }
