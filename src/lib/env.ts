@@ -24,12 +24,30 @@ export function getKitApiKey(): string {
   return required("KIT_API_KEY", true);
 }
 
+/** On-site booking anchor — karrotdigital.com currently redirect-loops. */
+export const DEFAULT_BOOKING_PATH = "/p#book";
+
+const BROKEN_BOOKING_HOSTS = ["karrotdigital.com"];
+
 export function getBookingUrl(): string {
-  return (
+  const raw = (
     process.env.NEXT_PUBLIC_BOOKING_URL ??
     process.env.BOOKING_URL ??
-    "https://karrotdigital.com/contact"
-  );
+    DEFAULT_BOOKING_PATH
+  ).trim();
+  if (!raw) return DEFAULT_BOOKING_PATH;
+  try {
+    if (raw.startsWith("/") || raw.startsWith("#") || raw.startsWith("mailto:")) {
+      return raw;
+    }
+    const host = new URL(raw).hostname.replace(/^www\./, "");
+    if (BROKEN_BOOKING_HOSTS.some((h) => host === h || host.endsWith(`.${h}`))) {
+      return DEFAULT_BOOKING_PATH;
+    }
+  } catch {
+    return DEFAULT_BOOKING_PATH;
+  }
+  return raw;
 }
 
 export function getSiteUrl(): string {

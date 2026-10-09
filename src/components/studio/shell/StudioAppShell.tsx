@@ -9,7 +9,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
-const LIVE_SITE = "https://karrotdigital.com";
+const LIVE_SITE = "/p";
 const AVATAR =
   "https://embed.filekitcdn.com/e/qZ375j2sBMyZfkkw6tSqH2/oJsbTGL9j6tMWN6r6KwcBW";
 
