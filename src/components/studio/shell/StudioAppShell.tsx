@@ -1,5 +1,6 @@
 "use client";
 
+import { ChangePasswordForm } from "@/components/studio/change-password-form";
 import { StudioNavContext } from "@/components/studio/shell/studio-nav-context";
 import { useNewPost } from "@/components/studio/use-new-post";
 import { createClient } from "@/lib/supabase/client";
@@ -157,6 +158,7 @@ function AccountFoot({
         <b>Darwin Chan</b>
         <span>{email ?? "…"}</span>
       </div>
+      {!demoMode && email && <ChangePasswordForm email={email} />}
       {!demoMode && (
         <button type="button" className="studio-signout" onClick={onSignOut}>
           Sign out

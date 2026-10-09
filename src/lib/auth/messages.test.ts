@@ -8,6 +8,12 @@ describe("friendlySignInError", () => {
     ).toContain("Too many login emails");
   });
 
+  it("maps invalid credentials", () => {
+    expect(friendlySignInError({ code: "invalid_credentials", message: "Invalid login" })).toContain(
+      "incorrect",
+    );
+  });
+
   it("maps redirect errors", () => {
     expect(
       friendlySignInError({ message: "Invalid email redirect URL" }),

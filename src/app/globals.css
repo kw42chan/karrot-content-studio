@@ -97,6 +97,110 @@ body {
   cursor: not-allowed;
 }
 
+.login-form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.login-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--karrot-muted);
+}
+
+.login-field input {
+  width: 100%;
+  border: 1px solid var(--karrot-border);
+  border-radius: 12px;
+  padding: 11px 14px;
+  font-size: 15px;
+  font-weight: 400;
+  color: var(--karrot-text);
+  background: var(--studio-surface, #fff);
+}
+
+.login-field input:focus {
+  outline: 2px solid var(--karrot-accent);
+  outline-offset: 1px;
+}
+
+.login-oauth-divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 14px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--karrot-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.login-oauth-divider::before,
+.login-oauth-divider::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--karrot-border);
+}
+
+.studio-change-password {
+  width: 100%;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--karrot-border);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.studio-change-password-title {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--karrot-muted);
+}
+
+.studio-change-password-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--karrot-muted);
+}
+
+.studio-change-password-field input {
+  width: 100%;
+  border: 1px solid var(--karrot-border);
+  border-radius: 8px;
+  padding: 7px 10px;
+  font-size: 13px;
+  background: #fff;
+}
+
+.studio-change-password-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.studio-change-password-error {
+  font-size: 11px;
+  color: #b42318;
+}
+
+.studio-change-password-ok {
+  font-size: 11px;
+  color: #1a6b3c;
+}
+
 /* —— Content Studio editor —— */
 .studio-root {
   min-height: 100vh;

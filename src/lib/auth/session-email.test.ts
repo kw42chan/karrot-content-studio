@@ -27,6 +27,16 @@ describe("sessionEmail", () => {
     expect(isAdminSession(user, ADMIN)).toBe(false);
   });
 
+  it("accepts admin email+password when email is confirmed", () => {
+    const user = fakeUser({
+      email: ADMIN,
+      email_confirmed_at: "2026-01-01T00:00:00Z",
+      identities: [{ provider: "email", id: "e1", identity_id: "e1", user_id: "u1" }],
+    });
+    expect(sessionEmail(user)).toBe(ADMIN);
+    expect(isAdminSession(user, ADMIN)).toBe(true);
+  });
+
   it("accepts admin when user.email matches and is verified via Google", () => {
     const user = fakeUser({
       email: ADMIN,

@@ -26,8 +26,12 @@ export function friendlySignInError(error: {
     return "Sign-in redirect is not configured correctly. Check NEXT_PUBLIC_SITE_URL and Supabase Auth redirect URLs, then try again.";
   }
 
+  if (code === "invalid_credentials" || message.toLowerCase().includes("invalid login")) {
+    return "Email or password is incorrect.";
+  }
+
   if (message) return message;
-  return "Could not send the login email. Please try again.";
+  return "Could not sign in. Please try again.";
 }
 
 export function friendlyCallbackError(reason: string | null, description: string | null): string {

@@ -1,23 +1,65 @@
 "use client";
 
+import { friendlySignInError } from "@/lib/auth/messages";
+import { isAdminSession } from "@/lib/auth/session-email";
 import { clientAuthRedirectBaseUrl } from "@/lib/auth/site-url";
+import { getAdminEmail } from "@/lib/env";
 import { createClient } from "@/lib/supabase/client";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useSearchParams } from "next/navigation";
 import { useState } from "react";
 
+const SHOW_GOOGLE_OAUTH = process.env.NEXT_PUBLIC_ENABLE_GOOGLE_LOGIN === "true";
+
 export function LoginForm() {
+  const router = useRouter();
   const params = useSearchParams();
   const next = params.get("next") ?? "/studio";
   const error = params.get("error");
   const authError = params.get("auth_error");
   const authMessage = params.get("auth_message");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+
+  async function signInWithPassword(e: React.FormEvent) {
+    e.preventDefault();
+    setFormError(null);
+    setLoading(true);
+
+    try {
+      const supabase = createClient();
+      const { data, error: signInError } = await supabase.auth.signInWithPassword({
+        email: email.trim(),
+        password,
+      });
+
+      if (signInError) {
+        setFormError(friendlySignInError(signInError));
+        return;
+      }
+
+      if (!isAdminSession(data.user, getAdminEmail())) {
+        await supabase.auth.signOut();
+        setFormError("This account isn't allowed to use Content Studio.");
+        return;
+      }
+
+      router.push(next);
+      router.refresh();
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : "Could not sign in.");
+    } finally {
+      setLoading(false);
+    }
+  }
 
   async function signInWithGoogle() {
     setFormError(null);
-    setLoading(true);
+    setGoogleLoading(true);
 
     try {
       const base = clientAuthRedirectBaseUrl();
@@ -39,7 +81,7 @@ export function LoginForm() {
     } catch (err) {
       setFormError(err instanceof Error ? err.message : "Could not start Google sign-in.");
     } finally {
-      setLoading(false);
+      setGoogleLoading(false);
     }
   }
 
@@ -63,18 +105,56 @@ export function LoginForm() {
         </p>
       )}
 
-      <div className="mt-8">
+      <form className="login-form mt-8" onSubmit={signInWithPassword}>
+        <label className="login-field">
+          <span>Email</span>
+          <input
+            type="email"
+            name="email"
+            autoComplete="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            required
+          />
+        </label>
+        <label className="login-field">
+          <span>Password</span>
+          <input
+            type="password"
+            name="password"
+            autoComplete="current-password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            required
+          />
+        </label>
         <button
-          type="button"
+          type="submit"
           disabled={loading}
-          onClick={signInWithGoogle}
-          className="btn-google"
+          className="btn-primary btn-primary--block mt-2"
           aria-busy={loading}
         >
-          <GoogleIcon />
-          {loading ? "Redirecting…" : "Sign in with Google"}
+          {loading ? "Signing in…" : "Sign in"}
         </button>
-      </div>
+      </form>
+
+      {SHOW_GOOGLE_OAUTH && (
+        <div className="login-oauth mt-6">
+          <p className="login-oauth-divider">
+            <span>Or</span>
+          </p>
+          <button
+            type="button"
+            disabled={googleLoading || loading}
+            onClick={signInWithGoogle}
+            className="btn-google"
+            aria-busy={googleLoading}
+          >
+            <GoogleIcon />
+            {googleLoading ? "Redirecting…" : "Sign in with Google"}
+          </button>
+        </div>
+      )}
     </>
   );
 }
@@ -108,7 +188,7 @@ export function LoginShell() {
       <Link href="/" className="mb-8 text-sm text-[var(--karrot-muted)]">← Back</Link>
       <h1 className="font-display text-3xl">Sign in</h1>
       <p className="mt-2 text-[var(--karrot-muted)]">
-        Google sign-in for the Karrot Digital admin account only.
+        Email and password for the Karrot Digital admin account.
       </p>
       <LoginForm />
     </main>
