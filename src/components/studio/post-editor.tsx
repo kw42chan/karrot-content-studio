@@ -371,7 +371,7 @@ export function PostEditor({
                     notify(result.error, true);
                     return;
                   }
-                  router.push(postsHref);
+                  router.replace(postsHref);
                   router.refresh();
                 });
               }}
