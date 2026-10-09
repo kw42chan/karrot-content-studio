@@ -1,3 +1,4 @@
+import { normalizeVariantResult } from "@/lib/ai/normalize-variant-result";
 import { completeJson } from "@/lib/ai/llm-json";
 import { formatSourceBundlesForPrompt } from "@/lib/sources/chunk-for-ai";
 import { sourceTextForAi } from "@/lib/sources/text-for-ai";
@@ -55,11 +56,12 @@ Current draft for this channel (if any): ${params.currentContent ?? "(empty)"}
 Sources:
 ${sourcesBlock}`;
 
-  return completeJson({
+  const parsed = await completeJson<Record<string, unknown>>({
     prompt,
     maxTokens: maxTokensForChannel(params.channel, params.prefs),
     offline: () => offlineVariant(params.channel, params.postTitle, undefined, params.prefs),
   });
+  return normalizeVariantResult(params.channel, parsed);
 }
 
 export async function generateVariantFromBlog(params: {
@@ -81,11 +83,12 @@ Blog body:
 ${params.blogBody.slice(0, 20000)}`;
 
   const snippet = params.blogBody.slice(0, 200);
-  return completeJson({
+  const parsed = await completeJson<Record<string, unknown>>({
     prompt,
     maxTokens: maxTokensForChannel(params.channel, params.prefs),
     offline: () => offlineVariant(params.channel, params.postTitle, snippet, params.prefs),
   });
+  return normalizeVariantResult(params.channel, parsed);
 }
 
 export async function adjustVariantContent(params: {
@@ -112,7 +115,7 @@ export async function adjustVariantContent(params: {
 
   const channelSpec = channelPrompt(params.channel, params.language, params.prefs);
 
-  const parsed = await completeJson<VariantResult>({
+  const parsed = await completeJson<Record<string, unknown>>({
     prompt: `Revise ${params.channel} copy. Never mention My take.
 ${adjustLine}
 ${channelSpec}
@@ -127,7 +130,7 @@ extra: ${JSON.stringify(params.currentExtra ?? {})}${sourcesBlock}`,
       extra: params.currentExtra,
     }),
   });
-  return parsed;
+  return normalizeVariantResult(params.channel, parsed);
 }
 
 export async function reviseVariantFromComments(params: {

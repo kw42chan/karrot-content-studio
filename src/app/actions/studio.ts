@@ -487,16 +487,13 @@ export async function draftPostWithAi(
       prefs,
     });
 
-    const { error: sugErr } = await supabase.from("studio_suggestions").insert({
-      post_id: postId,
-      source_id: null,
-      paragraph: drafted.content,
-      status: "pending",
-      label: "Draft from sources",
+    const saved = await saveVariant({
+      postId,
       channel,
+      content: drafted.content,
       extra: drafted.extra ?? {},
     });
-    if (sugErr) throw new Error(sugErr.message);
+    if (!saved.ok) throw new Error(saved.error);
   }
 
   revalidatePath(`/studio/posts/${postId}`);
@@ -523,16 +520,13 @@ export async function generateVariantFromBlogAction(
     prefs,
   });
 
-  const { error: sugErr } = await supabase.from("studio_suggestions").insert({
-    post_id: postId,
-    source_id: null,
-    paragraph: generated.content,
-    status: "pending",
-    label: "Generated from blog",
+  const saved = await saveVariant({
+    postId,
     channel,
+    content: generated.content,
     extra: generated.extra ?? {},
   });
-  if (sugErr) throw new Error(sugErr.message);
+  if (!saved.ok) throw new Error(saved.error);
   revalidatePath(`/studio/posts/${postId}`);
 }
 

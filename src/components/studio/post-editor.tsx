@@ -320,8 +320,11 @@ export function PostEditor({
 
   const variantKey = variantKeyFor(activeChannel, contentLocale);
   const variantContent = variantKey ? variants[variantKey].content : "";
+  const hasPendingVariantSuggestion = tabSuggestions.some((s) => s.paragraph?.trim());
   const showGenerateEmpty =
-    activeChannel !== "blog" && !variantContent.trim();
+    activeChannel !== "blog" &&
+    !variantContent.trim() &&
+    !hasPendingVariantSuggestion;
 
   return (
     <div className="studio-editor-page">
@@ -814,6 +817,13 @@ function VariantChannelEditor({
         <button type="button" className="studio-btn studio-btn-primary mt-3" onClick={onGenerate}>
           Generate from blog
         </button>
+        <VariantSuggestions
+          suggestions={suggestions}
+          demoMode={demoMode}
+          onAccept={(id) => run(() => resolveSuggestion(id, "accept"))}
+          onEdit={(id, text) => run(() => resolveSuggestion(id, "accept", text))}
+          onDismiss={(id) => run(() => resolveSuggestion(id, "dismiss"))}
+        />
       </div>
     );
   }
