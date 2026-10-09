@@ -368,7 +368,11 @@ export function PostEditor({
             disabled={pending}
             onClick={() =>
               run(async () => {
-                await publishPostToKit(post.id, publishMode, confirmEmail);
+                const result = await publishPostToKit(post.id, publishMode, confirmEmail);
+                if (!result.ok) {
+                  notify(result.error, true);
+                  return;
+                }
                 notify("Published to Kit");
               })
             }

@@ -34,6 +34,10 @@ import { getAdminEmail } from "@/lib/env";
 
 export type SavePostResult = { ok: true } | { ok: false; error: string };
 
+export type PublishPostResult =
+  | { ok: true; broadcastId: string }
+  | { ok: false; error: string };
+
 async function requireAdmin() {
   const supabase = await createClient();
   const {
@@ -724,39 +728,65 @@ export async function publishPostToKit(
   postId: string,
   mode: KitPublishMode,
   confirmEmail: boolean,
-) {
-  const supabase = await requireAdmin();
-  const { data: post } = await supabase.from("studio_posts").select("*").eq("id", postId).single();
-  if (!post) throw new Error("Post not found");
+): Promise<PublishPostResult> {
+  try {
+    const supabase = await requireAdmin();
+    const { data: post } = await supabase.from("studio_posts").select("*").eq("id", postId).single();
+    if (!post) {
+      return { ok: false, error: "Post not found." };
+    }
 
-  const sources = await loadPostSources(supabase, postId);
-  const html = renderKitPostHtml({
-    title: post.title,
-    myTake: post.my_take,
-    bodyMarkdown: stripSourcesSection(post.body),
-    sources,
-  });
+    if (!post.slug?.trim()) {
+      return { ok: false, error: "Publish failed: add a URL slug in Blog settings." };
+    }
 
-  const { broadcastId } = await publishToKit({
-    subject: post.title,
-    contentHtml: html,
-    broadcastId: post.kit_broadcast_id,
-    mode,
-    confirmEmail,
-  });
+    const bodyMarkdown = stripSourcesSection(post.body as string);
+    if (!bodyMarkdown.trim()) {
+      return { ok: false, error: "Publish failed: post body is empty." };
+    }
 
-  await supabase
-    .from("studio_posts")
-    .update({
-      kit_broadcast_id: broadcastId,
-      status: "published",
-      published_at: new Date().toISOString(),
-    })
-    .eq("id", postId);
+    const sources = await loadPostSources(supabase, postId);
+    const html = renderKitPostHtml({
+      title: post.title,
+      myTake: post.my_take,
+      bodyMarkdown,
+      sources,
+    });
 
-  revalidatePath(`/studio/posts/${postId}`);
-  revalidatePath("/posts");
-  return broadcastId;
+    const kit = await publishToKit({
+      subject: post.title,
+      contentHtml: html,
+      broadcastId: post.kit_broadcast_id,
+      mode,
+      confirmEmail,
+    });
+
+    if (!kit.ok) {
+      return { ok: false, error: kit.error };
+    }
+
+    const { error: updateErr } = await supabase
+      .from("studio_posts")
+      .update({
+        kit_broadcast_id: kit.broadcastId,
+        status: "published",
+        published_at: new Date().toISOString(),
+      })
+      .eq("id", postId);
+
+    if (updateErr) {
+      return { ok: false, error: `Published to Kit but could not save post: ${updateErr.message}` };
+    }
+
+    revalidatePath(`/studio/posts/${postId}`);
+    revalidatePath("/posts");
+    return { ok: true, broadcastId: kit.broadcastId };
+  } catch (e) {
+    return {
+      ok: false,
+      error: e instanceof Error ? e.message : "Publish failed.",
+    };
+  }
 }
 
 export async function restoreVersion(versionId: string) {
