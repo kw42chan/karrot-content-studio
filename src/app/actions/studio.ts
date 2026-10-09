@@ -35,6 +35,8 @@ export type SavePostResult = { ok: true } | { ok: false; error: string };
 
 export type PublishPostResult = { ok: true; url: string } | { ok: false; error: string };
 
+export type DeletePostResult = { ok: true } | { ok: false; error: string };
+
 async function requireAdmin() {
   const supabase = await createClient();
   const {
@@ -715,6 +717,44 @@ export async function resolveSuggestion(
     .eq("id", suggestionId);
 
   revalidatePath(`/studio/posts/${sug.post_id}`);
+}
+
+export async function deletePost(postId: string): Promise<DeletePostResult> {
+  try {
+    const supabase = await requireAdmin();
+    const { data: post } = await supabase
+      .from("studio_posts")
+      .select("slug, status")
+      .eq("id", postId)
+      .single();
+    if (!post) {
+      return { ok: false, error: "Post not found." };
+    }
+
+    const slug = post.slug as string;
+    const wasPublished = post.status === "published";
+
+    const { error: deleteErr } = await supabase.from("studio_posts").delete().eq("id", postId);
+    if (deleteErr) {
+      return { ok: false, error: `Delete failed: ${deleteErr.message}` };
+    }
+
+    revalidatePath("/studio");
+    revalidatePath(`/studio/posts/${postId}`);
+    revalidatePath("/p");
+    revalidatePath("/posts");
+    if (wasPublished) {
+      revalidatePath(publicPostPath(slug));
+      revalidatePath(`/posts/${slug}`);
+    }
+
+    return { ok: true };
+  } catch (e) {
+    return {
+      ok: false,
+      error: e instanceof Error ? e.message : "Delete failed.",
+    };
+  }
 }
 
 export async function publishPostToSite(postId: string): Promise<PublishPostResult> {

@@ -4,6 +4,7 @@ import {
   addPostComment,
   addSourceToPost,
   applyPostComments,
+  deletePost,
   draftPostWithAi,
   generateVariantFromBlogAction,
   quickAdjustVariantAction,
@@ -353,6 +354,31 @@ export function PostEditor({
           </span>
         </div>
         <div className="studio-editor-topbar-actions">
+          {!demoMode && (
+            <button
+              type="button"
+              className="studio-btn studio-btn-danger"
+              disabled={pending}
+              onClick={() => {
+                const label = title.trim() || "Untitled post";
+                const ok = window.confirm(
+                  `Delete “${label}” permanently?\n\nThis removes the post and all channel drafts, sources links, comments, and versions. This cannot be undone.`,
+                );
+                if (!ok) return;
+                run(async () => {
+                  const result = await deletePost(post.id);
+                  if (!result.ok) {
+                    notify(result.error, true);
+                    return;
+                  }
+                  router.push(postsHref);
+                  router.refresh();
+                });
+              }}
+            >
+              Delete
+            </button>
+          )}
           <Link
             href={demoMode ? "/demo/post" : `/p/${slug}`}
             className="studio-btn studio-btn-ghost hidden sm:inline-flex"

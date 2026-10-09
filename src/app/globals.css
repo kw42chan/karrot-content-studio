@@ -220,6 +220,17 @@ body {
   background: transparent;
 }
 
+.studio-btn-danger {
+  color: #b42318;
+  border-color: #fecdca;
+  background: #fff5f5;
+}
+
+.studio-btn-danger:hover:not(:disabled) {
+  background: #fee4e2;
+  border-color: #fda29b;
+}
+
 .studio-status {
   display: inline-flex;
   align-items: center;
