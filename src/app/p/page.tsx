@@ -45,6 +45,25 @@ export default async function PublicSiteIndexPage() {
             <li className="text-[var(--karrot-muted)]">No published posts yet.</li>
           )}
         </ul>
+
+        <section id="book" className="mt-12 rounded-3xl bg-[var(--karrot-card)] p-6 sm:p-8">
+          <h2 className="font-display text-3xl">Book a conversation</h2>
+          <p className="mt-3 text-[var(--karrot-muted)]">
+            Email Darwin about AI or automation work for your business. A calendar link will replace
+            this when ready.
+          </p>
+          <a
+            className="mt-5 inline-block rounded-full bg-[var(--karrot-accent)] px-5 py-3 font-semibold text-white"
+            href="mailto:darwin.chankawing@gmail.com?subject=Book%20a%20conversation%20%E2%80%94%20Karrot%20Digital"
+          >
+            Email Darwin
+          </a>
+          <p className="mt-3 text-sm">
+            <a className="text-[var(--karrot-accent)]" href="mailto:darwin.chankawing@gmail.com">
+              darwin.chankawing@gmail.com
+            </a>
+          </p>
+        </section>
       </div>
     </main>
   );
