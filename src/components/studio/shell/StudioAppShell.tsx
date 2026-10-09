@@ -1,6 +1,7 @@
 "use client";
 
 import { StudioNavContext } from "@/components/studio/shell/studio-nav-context";
+import { useNewPost } from "@/components/studio/use-new-post";
 import { createClient } from "@/lib/supabase/client";
 import { getAdminEmail } from "@/lib/env";
 import Link from "next/link";
@@ -22,6 +23,7 @@ export function StudioAppShell({
   const router = useRouter();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [email, setEmail] = useState<string | null>(null);
+  const { newPost: createNewPost, pending: newPostPending } = useNewPost(demoMode);
 
   useEffect(() => {
     if (demoMode) {
@@ -54,15 +56,9 @@ export function StudioAppShell({
     router.push("/login");
   }
 
-  async function newPost() {
-    if (demoMode) {
-      router.push("/demo/studio");
-      return;
-    }
-    const res = await fetch("/api/studio/new-post", { method: "POST" });
-    if (!res.ok) return;
-    const { id } = (await res.json()) as { id: string };
-    router.push(`/studio/posts/${id}`);
+  function newPost() {
+    setDrawerOpen(false);
+    void createNewPost();
   }
 
   const nav = (
@@ -74,8 +70,13 @@ export function StudioAppShell({
       >
         Posts
       </Link>
-      <button type="button" className="nav-item nav-item-primary" onClick={newPost}>
-        + New post
+      <button
+        type="button"
+        className="nav-item nav-item-primary"
+        onClick={newPost}
+        disabled={newPostPending}
+      >
+        {newPostPending ? "Creating…" : "+ New post"}
       </button>
       <div className="nav-divider" />
       <a
@@ -112,7 +113,13 @@ export function StudioAppShell({
 
       <nav className="studio-bottom-bar" aria-label="Primary">
         <Link href={postsHref} className={isPosts ? "active" : ""}>Posts</Link>
-        <button type="button" className="studio-bottom-new" onClick={newPost} aria-label="New post">
+        <button
+          type="button"
+          className="studio-bottom-new"
+          onClick={newPost}
+          disabled={newPostPending}
+          aria-label="New post"
+        >
           +
         </button>
         <a href={LIVE_SITE} target="_blank" rel="noopener noreferrer">Live site</a>

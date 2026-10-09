@@ -79,6 +79,7 @@ export default async function StudioPostPage({
         kit_broadcast_id: post.kit_broadcast_id,
         seo_title: post.seo_title ?? null,
         meta_description: post.meta_description ?? null,
+        category: post.category ?? null,
         generation_prefs: post.generation_prefs,
       }}
       sources={(orderedSources ?? []).map((s) => ({

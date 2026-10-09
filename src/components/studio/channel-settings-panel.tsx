@@ -3,6 +3,7 @@
 import { GenerationControls } from "@/components/studio/generation-controls";
 import type { ContentLocale, DistributionChannel } from "@/lib/studio/channels";
 import type { EditorPost, EditorVersion } from "@/components/studio/post-editor";
+import { POST_CATEGORIES, categoryLabel, type PostCategory } from "@/lib/blog/categories";
 import type { ChannelGenerationPrefs } from "@/lib/studio/generation-prefs";
 
 export function ChannelSettingsPanel({
@@ -15,6 +16,10 @@ export function ChannelSettingsPanel({
   setSeoTitle,
   metaDescription,
   setMetaDescription,
+  category,
+  setCategory,
+  onFillSeo,
+  seoFilling = false,
   publishMode,
   setPublishMode,
   confirmEmail,
@@ -46,6 +51,10 @@ export function ChannelSettingsPanel({
   setSeoTitle: (v: string) => void;
   metaDescription: string;
   setMetaDescription: (v: string) => void;
+  category: PostCategory | "";
+  setCategory: (v: PostCategory | "") => void;
+  onFillSeo?: () => void;
+  seoFilling?: boolean;
   publishMode: "web_only" | "web_and_email";
   setPublishMode: (v: "web_only" | "web_and_email") => void;
   confirmEmail: boolean;
@@ -105,6 +114,31 @@ export function ChannelSettingsPanel({
               />
             </div>
             <div className="studio-field">
+              <label>Category</label>
+              <select
+                value={category}
+                onChange={(e) => setCategory(e.target.value as PostCategory | "")}
+                disabled={demoMode}
+                className="w-full rounded-lg border border-[var(--karrot-border)] bg-white px-3 py-2 text-sm"
+              >
+                <option value="">— Select —</option>
+                {POST_CATEGORIES.map((c) => (
+                  <option key={c} value={c}>{categoryLabel(c)}</option>
+                ))}
+              </select>
+            </div>
+            {onFillSeo && (
+              <button
+                type="button"
+                className="studio-btn studio-btn-ghost h-8 text-xs"
+                onClick={onFillSeo}
+                disabled={demoMode || seoFilling}
+                aria-busy={seoFilling}
+              >
+                {seoFilling ? "Filling SEO…" : "Fill SEO"}
+              </button>
+            )}
+            <div className="studio-field">
               <label>Publish to</label>
               <div className="studio-seg-row">
                 <button
@@ -112,14 +146,15 @@ export function ChannelSettingsPanel({
                   className={`studio-chip ${publishMode === "web_only" ? "on" : ""}`}
                   onClick={() => setPublishMode("web_only")}
                 >
-                  Web only
+                  Public blog (/p)
                 </button>
                 <button
                   type="button"
                   className={`studio-chip ${publishMode === "web_and_email" ? "on" : ""}`}
                   onClick={() => setPublishMode("web_and_email")}
+                  title="Kit email publishing is unchanged in code but not used by the Publish button"
                 >
-                  Web + email
+                  Kit email (legacy)
                 </button>
               </div>
             </div>

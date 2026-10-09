@@ -25,7 +25,11 @@ export function getKitApiKey(): string {
 }
 
 export function getBookingUrl(): string {
-  return process.env.BOOKING_URL ?? "https://karrotdigital.com/contact";
+  return (
+    process.env.NEXT_PUBLIC_BOOKING_URL ??
+    process.env.BOOKING_URL ??
+    "https://karrotdigital.com/contact"
+  );
 }
 
 export function getSiteUrl(): string {

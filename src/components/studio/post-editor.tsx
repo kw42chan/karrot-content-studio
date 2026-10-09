@@ -7,7 +7,8 @@ import {
   draftPostWithAi,
   generateVariantFromBlogAction,
   quickAdjustVariantAction,
-  publishPostToKit,
+  fillPostSeo,
+  publishToSite,
   saveGenerationPrefs,
   resolvePostComment,
   resolveSuggestion,
@@ -33,9 +34,15 @@ import {
   normalizeGenerationPrefs,
   type ChannelGenerationPrefs,
 } from "@/lib/studio/generation-prefs";
+import type { PostCategory } from "@/lib/blog/categories";
+import {
+  isPlaceholderMeta,
+  isPlaceholderSeoTitle,
+  isPlaceholderSlug,
+} from "@/lib/posts/seo-slug";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 
 export type EditorSource = {
   id: string;
@@ -84,6 +91,7 @@ export type EditorPost = {
   kit_broadcast_id: string | null;
   seo_title?: string | null;
   meta_description?: string | null;
+  category?: PostCategory | null;
   generation_prefs?: ChannelGenerationPrefs | null;
 };
 
@@ -152,6 +160,11 @@ export function PostEditor({
   const [slug, setSlug] = useState(post.slug);
   const [seoTitle, setSeoTitle] = useState(post.seo_title ?? post.title);
   const [metaDescription, setMetaDescription] = useState(post.meta_description ?? "");
+  const [category, setCategory] = useState<PostCategory | "">(post.category ?? "");
+  const slugEdited = useRef(false);
+  const seoEdited = useRef(false);
+  const metaEdited = useRef(false);
+  const [seoFilling, setSeoFilling] = useState(false);
   const [myTake, setMyTake] = useState(post.my_take);
   const [body, setBody] = useState(post.body);
   const [lang, setLang] = useState(post.body_language);
@@ -211,6 +224,46 @@ export function PostEditor({
   function notify(text: string, isError = false) {
     setMessage(text);
     setMessageIsError(isError);
+  }
+
+  function seoFillFlags() {
+    return {
+      slug: !slugEdited.current && isPlaceholderSlug(slug),
+      seoTitle: !seoEdited.current && isPlaceholderSeoTitle(seoTitle),
+      metaDescription: !metaEdited.current && isPlaceholderMeta(metaDescription),
+    };
+  }
+
+  async function fillSeoFromBody(bodyText: string, quiet = false) {
+    const fill = seoFillFlags();
+    if (!fill.slug && !fill.seoTitle && !fill.metaDescription) {
+      if (!quiet) notify("Slug, SEO title, and meta description are already set.");
+      return;
+    }
+    if (!bodyText.trim()) {
+      if (!quiet) notify("Add a draft body first.", true);
+      return;
+    }
+    setSeoFilling(true);
+    try {
+      const result = await fillPostSeo({
+        postId: post.id,
+        body: bodyText,
+        language: contentLocale,
+        fill,
+      });
+      if (!result.ok) {
+        notify(quiet ? `Added to the draft, but SEO failed: ${result.error}` : result.error, true);
+        return;
+      }
+      if (result.slug) setSlug(result.slug);
+      if (result.seoTitle) setSeoTitle(result.seoTitle);
+      if (result.metaDescription) setMetaDescription(result.metaDescription);
+      notify(quiet ? "Added to the draft. SEO fields filled." : "SEO fields filled. You can still edit them.");
+      router.refresh();
+    } finally {
+      setSeoFilling(false);
+    }
   }
 
   function run(fn: () => Promise<void>) {
@@ -284,6 +337,7 @@ export function PostEditor({
           social_captions: { zh: variants.zh.content, en: variants.en.content },
           seo_title: seoTitle,
           meta_description: metaDescription,
+          category: category || null,
         });
         if (!result.ok) {
           notify(result.error, true);
@@ -349,7 +403,7 @@ export function PostEditor({
         </div>
         <div className="studio-editor-topbar-actions">
           <Link
-            href={demoMode ? "/demo/post" : `/posts/${slug}`}
+            href={demoMode ? "/demo/post" : `/p/${slug}`}
             className="studio-btn studio-btn-ghost hidden sm:inline-flex"
           >
             Preview
@@ -368,8 +422,23 @@ export function PostEditor({
             disabled={pending}
             onClick={() =>
               run(async () => {
-                await publishPostToKit(post.id, publishMode, confirmEmail);
-                notify("Published to Kit");
+                const result = await publishToSite({
+                  id: post.id,
+                  title,
+                  slug,
+                  my_take: myTake,
+                  body,
+                  body_language: lang,
+                  seo_title: seoTitle,
+                  meta_description: metaDescription,
+                  category: category || null,
+                });
+                if (!result.ok) {
+                  notify(result.error, true);
+                  return;
+                }
+                const url = `${window.location.origin}/p/${result.slug}`;
+                notify(`Published. ${url}`);
               })
             }
           >
@@ -384,7 +453,15 @@ export function PostEditor({
             messageIsError ? "font-medium text-red-700" : "text-[var(--karrot-muted)]"
           }`}
         >
-          {message}
+          {message?.split(/(https?:\/\/\S+)/).map((part, i) =>
+            part.startsWith("http") ? (
+              <a key={i} href={part} className="font-semibold text-[var(--karrot-accent)] underline">
+                {part}
+              </a>
+            ) : (
+              <span key={i}>{part}</span>
+            ),
+          )}
         </p>
       )}
 
@@ -710,11 +787,24 @@ export function PostEditor({
           locale={contentLocale}
           post={post}
           slug={slug}
-          setSlug={setSlug}
+          setSlug={(v) => {
+            slugEdited.current = true;
+            setSlug(v);
+          }}
           seoTitle={seoTitle}
-          setSeoTitle={setSeoTitle}
+          setSeoTitle={(v) => {
+            seoEdited.current = true;
+            setSeoTitle(v);
+          }}
           metaDescription={metaDescription}
-          setMetaDescription={setMetaDescription}
+          setMetaDescription={(v) => {
+            metaEdited.current = true;
+            setMetaDescription(v);
+          }}
+          category={category}
+          setCategory={setCategory}
+          onFillSeo={() => void fillSeoFromBody(stripSourcesForEditor(body))}
+          seoFilling={seoFilling}
           publishMode={publishMode}
           setPublishMode={setPublishMode}
           confirmEmail={confirmEmail}

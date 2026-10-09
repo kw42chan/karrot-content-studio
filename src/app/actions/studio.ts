@@ -26,6 +26,11 @@ import {
   buildSourcesMarkdown,
   type SourceCredit,
 } from "@/lib/posts/build-sources-markdown";
+import { generateSeoFields } from "@/lib/ai/seo";
+import { computeReadTimeMinutes } from "@/lib/blog/read-time";
+import { stripSourcesSection } from "@/lib/blog/format";
+import type { PostCategory } from "@/lib/blog/categories";
+import { publishBlockReason, seoSlug, withSlugSuffix } from "@/lib/posts/seo-slug";
 import { slugify } from "@/lib/posts/slugify";
 import { readSourceFromUrl } from "@/lib/sources/read-source";
 import type { BilingualSummary } from "@/lib/sources/types";
@@ -184,6 +189,80 @@ export async function createPost() {
   return data.id as string;
 }
 
+export type FillSeoResult =
+  | { ok: true; slug?: string; seoTitle?: string; metaDescription?: string }
+  | { ok: false; error: string };
+
+export async function fillPostSeo(input: {
+  postId: string;
+  body: string;
+  language: "zh-HK" | "en";
+  fill: { slug: boolean; seoTitle: boolean; metaDescription: boolean };
+}): Promise<FillSeoResult> {
+  try {
+    if (!input.fill.slug && !input.fill.seoTitle && !input.fill.metaDescription) {
+      return { ok: true };
+    }
+    if (!input.body.trim()) return { ok: false, error: "Add a draft body first." };
+    const supabase = await requireAdmin();
+    const drafted = await generateSeoFields({ body: input.body, language: input.language });
+    const patch: { slug?: string; seo_title?: string; meta_description?: string } = {};
+    let slugOut: string | undefined;
+    if (input.fill.slug) {
+      let slug = drafted.slug || seoSlug(drafted.seoTitle) || "post";
+      const { data: clash } = await supabase
+        .from("studio_posts")
+        .select("id")
+        .eq("slug", slug)
+        .maybeSingle();
+      if (clash && clash.id !== input.postId) {
+        slug = withSlugSuffix(slug, input.postId.replace(/-/g, "").slice(0, 4));
+      }
+      patch.slug = slug;
+      slugOut = slug;
+    }
+    if (input.fill.seoTitle) patch.seo_title = drafted.seoTitle;
+    if (input.fill.metaDescription) patch.meta_description = drafted.metaDescription;
+    const { error } = await supabase.from("studio_posts").update(patch).eq("id", input.postId);
+    if (error) return { ok: false, error: error.message };
+    revalidatePath(`/studio/posts/${input.postId}`);
+    return {
+      ok: true,
+      slug: slugOut,
+      seoTitle: input.fill.seoTitle ? drafted.seoTitle : undefined,
+      metaDescription: input.fill.metaDescription ? drafted.metaDescription : undefined,
+    };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Something went wrong" };
+  }
+}
+
+export async function publishToSite(input: {
+  id: string;
+  title: string;
+  slug: string;
+  my_take: string;
+  body: string;
+  body_language: "zh-HK" | "en";
+  seo_title: string;
+  meta_description: string;
+  category?: PostCategory | null;
+}): Promise<SavePostResult & { slug?: string }> {
+  const blocked = publishBlockReason(input.slug, input.seo_title, input.meta_description);
+  if (blocked) return { ok: false, error: blocked };
+  const saved = await savePost({
+    ...input,
+    status: "published",
+    seo_title: input.seo_title,
+    meta_description: input.meta_description,
+    category: input.category,
+  });
+  if (!saved.ok) return saved;
+  revalidatePath("/p");
+  revalidatePath(`/p/${input.slug}`);
+  return { ok: true, slug: input.slug };
+}
+
 export async function savePost(input: {
   id: string;
   title: string;
@@ -197,6 +276,7 @@ export async function savePost(input: {
   social_captions?: { zh?: string; en?: string };
   seo_title?: string;
   meta_description?: string;
+  category?: PostCategory | null;
 }): Promise<SavePostResult> {
   try {
     const supabase = await requireAdmin();
@@ -204,6 +284,19 @@ export async function savePost(input: {
     const sources = await loadPostSources(supabase, input.id);
     const sourcesMd = buildSourcesMarkdown(sources);
     const bodyWithSources = appendSourcesToBody(input.body, sourcesMd);
+    const bodyForMetrics = stripSourcesSection(bodyWithSources);
+    const read_time = computeReadTimeMinutes(bodyForMetrics, input.body_language);
+    const excerpt =
+      input.meta_description?.trim() ||
+      input.my_take?.trim() ||
+      bodyForMetrics.split(/\n\n+/)[0]?.trim().slice(0, 280) ||
+      null;
+
+    const { data: existingRow } = await supabase
+      .from("studio_posts")
+      .select("published_at")
+      .eq("id", input.id)
+      .maybeSingle();
 
     const payload = {
       title: input.title,
@@ -217,7 +310,13 @@ export async function savePost(input: {
       social_captions: input.social_captions ?? null,
       seo_title: input.seo_title ?? null,
       meta_description: input.meta_description ?? null,
-      published_at: input.status === "published" ? new Date().toISOString() : null,
+      category: input.category ?? null,
+      read_time,
+      excerpt,
+      published_at:
+        input.status === "published"
+          ? (existingRow?.published_at ?? new Date().toISOString())
+          : null,
     };
 
     const { data, error } = await supabase
@@ -251,6 +350,8 @@ export async function savePost(input: {
 
     revalidatePath(`/studio/posts/${input.id}`);
     revalidatePath("/posts");
+    revalidatePath("/p");
+    if (input.slug) revalidatePath(`/p/${input.slug}`);
     return { ok: true };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Save failed" };
@@ -756,6 +857,7 @@ export async function publishPostToKit(
 
   revalidatePath(`/studio/posts/${postId}`);
   revalidatePath("/posts");
+  revalidatePath("/p");
   return broadcastId;
 }
 
@@ -810,10 +912,6 @@ async function loadPostSources(
       };
     })
     .filter(Boolean) as (SourceCredit & { id: string })[];
-}
-
-function stripSourcesSection(body: string): string {
-  return body.replace(/\n## Sources[\s\S]*$/m, "").trim();
 }
 
 async function loadSourceBundles(

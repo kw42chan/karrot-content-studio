@@ -1,7 +1,7 @@
 "use client";
 
 import { PostsList, type StudioListPost } from "@/components/studio/posts-list";
-import { useRouter } from "next/navigation";
+import { useNewPost } from "@/components/studio/use-new-post";
 
 export function PostsListPage({
   posts,
@@ -10,18 +10,7 @@ export function PostsListPage({
   posts: StudioListPost[];
   demoMode?: boolean;
 }) {
-  const router = useRouter();
+  const { newPost } = useNewPost(demoMode);
 
-  async function onNewPost() {
-    if (demoMode) {
-      router.push("/demo/studio");
-      return;
-    }
-    const res = await fetch("/api/studio/new-post", { method: "POST" });
-    if (!res.ok) return;
-    const { id } = (await res.json()) as { id: string };
-    router.push(`/studio/posts/${id}`);
-  }
-
-  return <PostsList posts={posts} demoMode={demoMode} onNewPost={onNewPost} />;
+  return <PostsList posts={posts} demoMode={demoMode} onNewPost={() => void newPost()} />;
 }
