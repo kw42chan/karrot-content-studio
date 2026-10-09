@@ -19,7 +19,7 @@ export default function HomePage() {
           Sign in
         </Link>
         <Link
-          href="/posts"
+          href="/p"
           className="rounded-full border border-[var(--karrot-border)] bg-white px-5 py-2.5 text-sm font-semibold"
         >
           Published posts
