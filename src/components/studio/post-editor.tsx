@@ -7,6 +7,7 @@ import {
   draftPostWithAi,
   generateVariantFromBlogAction,
   quickAdjustVariantAction,
+  deletePost,
   fillPostSeo,
   publishToSite,
   saveGenerationPrefs,
@@ -165,6 +166,7 @@ export function PostEditor({
   const seoEdited = useRef(false);
   const metaEdited = useRef(false);
   const [seoFilling, setSeoFilling] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [myTake, setMyTake] = useState(post.my_take);
   const [body, setBody] = useState(post.body);
   const [lang, setLang] = useState(post.body_language);
@@ -367,6 +369,33 @@ export function PostEditor({
     notify("Copied to clipboard");
   }
 
+  async function handleDeletePost() {
+    if (demoMode) {
+      notify("Demo only — connect Supabase to delete.", true);
+      return;
+    }
+    const label = title.trim() || slug || "this post";
+    if (
+      !window.confirm(
+        `Delete "${label}" permanently?\n\nThis removes the post from the studio and public /p pages. This cannot be undone.`,
+      )
+    ) {
+      return;
+    }
+    setDeleting(true);
+    try {
+      const result = await deletePost(post.id);
+      if (!result.ok) {
+        notify(result.error, true);
+        return;
+      }
+      router.push("/studio");
+      router.refresh();
+    } finally {
+      setDeleting(false);
+    }
+  }
+
   const xChars = variants.x.content.length;
   const threadsChars = variants.threads.content.length;
 
@@ -418,8 +447,16 @@ export function PostEditor({
           </button>
           <button
             type="button"
+            className="studio-btn studio-btn-danger sm:hidden"
+            disabled={pending || deleting || demoMode}
+            onClick={() => void handleDeletePost()}
+          >
+            {deleting ? "Deleting…" : "Delete"}
+          </button>
+          <button
+            type="button"
             className="studio-btn studio-btn-primary"
-            disabled={pending}
+            disabled={pending || deleting}
             onClick={() =>
               run(async () => {
                 const result = await publishToSite({
@@ -841,6 +878,8 @@ export function PostEditor({
           onGenerationPrefsChange={persistGenerationPrefs}
           versions={versions}
           onRestoreVersion={(id) => run(() => restoreVersion(id))}
+          onDeletePost={demoMode ? undefined : () => void handleDeletePost()}
+          deletePending={deleting}
         />
       </div>
     </div>

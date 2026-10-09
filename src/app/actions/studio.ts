@@ -189,6 +189,42 @@ export async function createPost() {
   return data.id as string;
 }
 
+export type DeletePostResult = { ok: true } | { ok: false; error: string };
+
+/** Permanently removes a post; child rows cascade via FK on delete. */
+export async function deletePost(postId: string): Promise<DeletePostResult> {
+  try {
+    const supabase = await requireAdmin();
+    const { data: post, error: loadErr } = await supabase
+      .from("studio_posts")
+      .select("id, slug")
+      .eq("id", postId)
+      .maybeSingle();
+    if (loadErr) return { ok: false, error: loadErr.message };
+    if (!post) return { ok: false, error: "Post not found." };
+
+    const { error: delErr } = await supabase.from("studio_posts").delete().eq("id", postId);
+    if (delErr) {
+      return {
+        ok: false,
+        error: `Delete failed: ${delErr.message}${delErr.code ? ` (${delErr.code})` : ""}`,
+      };
+    }
+
+    revalidatePath("/studio");
+    revalidatePath(`/studio/posts/${postId}`);
+    revalidatePath("/p");
+    revalidatePath("/posts");
+    if (post.slug) {
+      revalidatePath(`/p/${post.slug}`);
+      revalidatePath(`/posts/${post.slug}`);
+    }
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Delete failed." };
+  }
+}
+
 export type FillSeoResult =
   | { ok: true; slug?: string; seoTitle?: string; metaDescription?: string }
   | { ok: false; error: string };

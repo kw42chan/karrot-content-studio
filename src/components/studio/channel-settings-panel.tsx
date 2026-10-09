@@ -41,6 +41,8 @@ export function ChannelSettingsPanel({
   onGenerationPrefsChange,
   versions,
   onRestoreVersion,
+  onDeletePost,
+  deletePending = false,
 }: {
   channel: DistributionChannel;
   locale: ContentLocale;
@@ -76,6 +78,8 @@ export function ChannelSettingsPanel({
   onGenerationPrefsChange: (prefs: ChannelGenerationPrefs) => void;
   versions: EditorVersion[];
   onRestoreVersion: (id: string) => void;
+  onDeletePost?: () => void;
+  deletePending?: boolean;
 }) {
   const channelLabel =
     channel === "blog"
@@ -290,6 +294,22 @@ export function ChannelSettingsPanel({
 
         {post.kit_broadcast_id && (
           <p className="text-xs text-[var(--karrot-muted)]">Kit: {post.kit_broadcast_id}</p>
+        )}
+
+        {onDeletePost && (
+          <div className="studio-danger-zone">
+            <p className="text-xs text-[var(--karrot-muted)]">
+              Permanently removes this post from the studio and public blog.
+            </p>
+            <button
+              type="button"
+              className="studio-btn studio-btn-danger w-full"
+              disabled={deletePending || demoMode}
+              onClick={onDeletePost}
+            >
+              {deletePending ? "Deleting…" : "Delete post"}
+            </button>
+          </div>
         )}
       </div>
     </aside>

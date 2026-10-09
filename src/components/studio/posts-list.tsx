@@ -17,10 +17,14 @@ export function PostsList({
   posts,
   demoMode = false,
   onNewPost,
+  onDeletePost,
+  deletingId = null,
 }: {
   posts: StudioListPost[];
   demoMode?: boolean;
   onNewPost: () => void;
+  onDeletePost?: (post: StudioListPost) => void;
+  deletingId?: string | null;
 }) {
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<"all" | "draft" | "published">("all");
@@ -79,6 +83,7 @@ export function PostsList({
               <th>Channels</th>
               <th>Updated</th>
               <th>Status</th>
+              {!demoMode && onDeletePost && <th className="studio-list-actions-col">Actions</th>}
             </tr>
           </thead>
           <tbody>
@@ -117,6 +122,18 @@ export function PostsList({
                     {p.status === "published" ? "Published" : "Draft"}
                   </span>
                 </td>
+                {!demoMode && onDeletePost && (
+                  <td className="studio-list-actions-col">
+                    <button
+                      type="button"
+                      className="studio-btn studio-btn-danger studio-btn-sm"
+                      disabled={deletingId === p.id}
+                      onClick={() => onDeletePost(p)}
+                    >
+                      {deletingId === p.id ? "Deleting…" : "Delete"}
+                    </button>
+                  </td>
+                )}
               </tr>
             ))}
           </tbody>

@@ -201,6 +201,44 @@ body {
   color: #1a6b3c;
 }
 
+.studio-btn-danger {
+  border: 1px solid #e8b4b4;
+  background: #fff5f5;
+  color: #b42318;
+  font-weight: 600;
+}
+
+.studio-btn-danger:hover:not(:disabled) {
+  background: #fee4e2;
+  border-color: #f3a8a8;
+}
+
+.studio-btn-danger:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.studio-btn-sm {
+  padding: 6px 12px;
+  font-size: 12px;
+  border-radius: 999px;
+}
+
+.studio-list-actions-col {
+  width: 1%;
+  white-space: nowrap;
+  text-align: right;
+}
+
+.studio-danger-zone {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--karrot-border);
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
 /* —— Content Studio editor —— */
 .studio-root {
   min-height: 100vh;
