@@ -7,7 +7,7 @@ import {
   draftPostWithAi,
   generateVariantFromBlogAction,
   quickAdjustVariantAction,
-  publishPostToKit,
+  publishPostToSite,
   saveGenerationPrefs,
   resolvePostComment,
   resolveSuggestion,
@@ -163,8 +163,6 @@ export function PostEditor({
   const [comments, setComments] = useState(initialComments);
   const [message, setMessage] = useState<string | null>(null);
   const [messageIsError, setMessageIsError] = useState(false);
-  const [publishMode, setPublishMode] = useState<"web_only" | "web_and_email">("web_only");
-  const [confirmEmail, setConfirmEmail] = useState(false);
   const [localSuggestions, setLocalSuggestions] = useState(suggestions);
   const [ogTick, setOgTick] = useState(0);
   const [generationPrefs, setGenerationPrefs] = useState<ChannelGenerationPrefs>(() =>
@@ -264,6 +262,23 @@ export function PostEditor({
     run(() => quickAdjustVariantAction(post.id, draftChannel(), adjust, generationPrefs));
   }
 
+  async function persistBlogPost() {
+    return savePost({
+      id: post.id,
+      title,
+      slug,
+      my_take: myTake,
+      body,
+      body_language: lang,
+      status: post.status,
+      key_point: variants.zh.extra.key_point,
+      social_title: variants.zh.extra.social_title,
+      social_captions: { zh: variants.zh.content, en: variants.en.content },
+      seo_title: seoTitle,
+      meta_description: metaDescription,
+    });
+  }
+
   async function handleSave() {
     if (demoMode) {
       notify("Demo only — connect Supabase to save.", true);
@@ -271,20 +286,7 @@ export function PostEditor({
     }
     start(async () => {
       if (activeChannel === "blog") {
-        const result = await savePost({
-          id: post.id,
-          title,
-          slug,
-          my_take: myTake,
-          body,
-          body_language: lang,
-          status: post.status,
-          key_point: variants.zh.extra.key_point,
-          social_title: variants.zh.extra.social_title,
-          social_captions: { zh: variants.zh.content, en: variants.en.content },
-          seo_title: seoTitle,
-          meta_description: metaDescription,
-        });
+        const result = await persistBlogPost();
         if (!result.ok) {
           notify(result.error, true);
           return;
@@ -349,7 +351,7 @@ export function PostEditor({
         </div>
         <div className="studio-editor-topbar-actions">
           <Link
-            href={demoMode ? "/demo/post" : `/posts/${slug}`}
+            href={demoMode ? "/demo/post" : `/p/${slug}`}
             className="studio-btn studio-btn-ghost hidden sm:inline-flex"
           >
             Preview
@@ -368,12 +370,21 @@ export function PostEditor({
             disabled={pending}
             onClick={() =>
               run(async () => {
-                const result = await publishPostToKit(post.id, publishMode, confirmEmail);
+                const saved = await persistBlogPost();
+                if (!saved.ok) {
+                  notify(saved.error, true);
+                  return;
+                }
+                const result = await publishPostToSite(post.id);
                 if (!result.ok) {
                   notify(result.error, true);
                   return;
                 }
-                notify("Published to Kit");
+                const absolute =
+                  typeof window !== "undefined"
+                    ? `${window.location.origin}${result.url}`
+                    : result.url;
+                notify(`Published — ${absolute}`);
               })
             }
           >
@@ -719,10 +730,6 @@ export function PostEditor({
           setSeoTitle={setSeoTitle}
           metaDescription={metaDescription}
           setMetaDescription={setMetaDescription}
-          publishMode={publishMode}
-          setPublishMode={setPublishMode}
-          confirmEmail={confirmEmail}
-          setConfirmEmail={setConfirmEmail}
           xChars={xChars}
           threadsChars={threadsChars}
           threadParts={variants.x.extra.thread_parts ?? []}

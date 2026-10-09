@@ -26,9 +26,11 @@ const AVATAR =
 export function PublicPostView({
   post,
   sources,
+  backHref = "/posts",
 }: {
   post: PublicPost;
   sources: PublicSource[];
+  backHref?: string;
 }) {
   const bodyWithoutSources = post.body.replace(/\n## Sources[\s\S]*$/m, "").trim();
   const bodyHtml = marked.parse(bodyWithoutSources) as string;
@@ -46,7 +48,7 @@ export function PublicPostView({
         />
         <div className="relative z-10 flex items-center justify-between">
           <Link
-            href="/posts"
+            href={backHref}
             className="flex h-11 w-11 items-center justify-center rounded-full border border-white/70"
           >
             ←

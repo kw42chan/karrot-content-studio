@@ -7,7 +7,7 @@ Private content-marketing CMS for [Karrot Digital](https://karrotdigital.com). P
 - **Next.js** (App Router, TypeScript) on Vercel
 - **Supabase** (existing project `gmfzwuunaqzutbhudsxn`) — tables in `public` with `studio_` prefix
 - **OpenRouter** for AI (server-side only)
-- **Kit v4** for web/email publish
+- **Kit v4** (optional legacy module — publish is on this app’s `/p` routes)
 
 ## Setup
 
@@ -29,7 +29,7 @@ Copy `.env.example` to `.env.local` and fill in values:
 | `ADMIN_EMAIL` | Yes | Only this email can use `/studio` (default `darwin.chankawing@gmail.com`) |
 | `OPENROUTER_API_KEY` | For AI | Summaries, draft, enrich |
 | `OPENROUTER_MODEL` | No | Default `qwen/qwen3-vl-32b-instruct` |
-| `KIT_API_KEY` | For publish | Kit v4 API key |
+| `KIT_API_KEY` | No | Not used for publish (site publish at `/p`); optional legacy only |
 | `BOOKING_URL` | No | CTA button URL (default contact page) |
 | `NEXT_PUBLIC_SITE_URL` | Yes | e.g. `https://your-app.vercel.app` for auth redirects |
 
@@ -91,8 +91,8 @@ Open `/login`, **Sign in with Google** using the `ADMIN_EMAIL` Google account, t
 - Bilingual summaries (fixtures for three test URLs when OpenRouter is unset during summarize — production should set the key)
 - Posts with My take, AI draft, version history, enrichment suggestions
 - Social captions + OG image (`/api/og/social`)
-- Kit publish (web only or web + email with confirmation)
-- Public `/posts` listing and post preview pages
+- **Publish** to public `/p` and `/p/[slug]` on this app (SEO title + meta required)
+- Legacy `/posts` listing (optional); primary public URLs are `/p`
 
 ## Test fixtures
 

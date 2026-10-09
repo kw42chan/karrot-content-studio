@@ -15,10 +15,6 @@ export function ChannelSettingsPanel({
   setSeoTitle,
   metaDescription,
   setMetaDescription,
-  publishMode,
-  setPublishMode,
-  confirmEmail,
-  setConfirmEmail,
   xChars,
   threadsChars,
   threadParts,
@@ -46,10 +42,6 @@ export function ChannelSettingsPanel({
   setSeoTitle: (v: string) => void;
   metaDescription: string;
   setMetaDescription: (v: string) => void;
-  publishMode: "web_only" | "web_and_email";
-  setPublishMode: (v: "web_only" | "web_and_email") => void;
-  confirmEmail: boolean;
-  setConfirmEmail: (v: boolean) => void;
   xChars: number;
   threadsChars: number;
   threadParts: string[];
@@ -104,36 +96,9 @@ export function ChannelSettingsPanel({
                 readOnly={demoMode}
               />
             </div>
-            <div className="studio-field">
-              <label>Publish to</label>
-              <div className="studio-seg-row">
-                <button
-                  type="button"
-                  className={`studio-chip ${publishMode === "web_only" ? "on" : ""}`}
-                  onClick={() => setPublishMode("web_only")}
-                >
-                  Web only
-                </button>
-                <button
-                  type="button"
-                  className={`studio-chip ${publishMode === "web_and_email" ? "on" : ""}`}
-                  onClick={() => setPublishMode("web_and_email")}
-                >
-                  Web + email
-                </button>
-              </div>
-            </div>
-            {publishMode === "web_and_email" && (
-              <label className="flex items-start gap-2 text-xs leading-snug">
-                <input
-                  type="checkbox"
-                  checked={confirmEmail}
-                  onChange={(e) => setConfirmEmail(e.target.checked)}
-                  className="mt-0.5"
-                />
-                I confirm sending this to my email list
-              </label>
-            )}
+            <p className="text-xs leading-relaxed text-[var(--karrot-muted)]">
+              Publish makes this post public at <strong>/p/{slug || "your-slug"}</strong>.
+            </p>
           </>
         )}
 
@@ -253,9 +218,6 @@ export function ChannelSettingsPanel({
           </div>
         )}
 
-        {post.kit_broadcast_id && (
-          <p className="text-xs text-[var(--karrot-muted)]">Kit: {post.kit_broadcast_id}</p>
-        )}
       </div>
     </aside>
   );
