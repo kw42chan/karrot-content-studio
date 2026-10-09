@@ -25,6 +25,8 @@ import {
   buildSourcesMarkdown,
   type SourceCredit,
 } from "@/lib/posts/build-sources-markdown";
+import { generateSeoFields } from "@/lib/ai/seo";
+import { seoSlug, withSlugSuffix } from "@/lib/posts/seo-slug";
 import { slugify } from "@/lib/posts/slugify";
 import { readSourceFromUrl } from "@/lib/sources/read-source";
 import type { BilingualSummary } from "@/lib/sources/types";
@@ -32,6 +34,13 @@ import { createClient } from "@/lib/supabase/server";
 import { getAdminEmail } from "@/lib/env";
 
 export type SavePostResult = { ok: true } | { ok: false; error: string };
+
+/** Mutation actions that should surface errors in the editor banner instead of throwing. */
+export type StudioActionResult = SavePostResult;
+
+export type FillSeoResult =
+  | { ok: true; slug?: string; seoTitle?: string; metaDescription?: string }
+  | { ok: false; error: string };
 
 export type PublishPostResult = { ok: true; url: string } | { ok: false; error: string };
 
@@ -259,6 +268,50 @@ export async function savePost(input: {
     return { ok: true };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Save failed" };
+  }
+}
+
+export async function fillPostSeo(input: {
+  postId: string;
+  body: string;
+  language: "zh-HK" | "en";
+  fill: { slug: boolean; seoTitle: boolean; metaDescription: boolean };
+}): Promise<FillSeoResult> {
+  try {
+    if (!input.fill.slug && !input.fill.seoTitle && !input.fill.metaDescription) {
+      return { ok: true };
+    }
+    if (!input.body.trim()) return { ok: false, error: "Add a draft body first." };
+    const supabase = await requireAdmin();
+    const drafted = await generateSeoFields({ body: input.body, language: input.language });
+    const patch: { slug?: string; seo_title?: string; meta_description?: string } = {};
+    let slugOut: string | undefined;
+    if (input.fill.slug) {
+      let slug = drafted.slug || seoSlug(drafted.seoTitle) || "post";
+      const { data: clash } = await supabase
+        .from("studio_posts")
+        .select("id")
+        .eq("slug", slug)
+        .maybeSingle();
+      if (clash && clash.id !== input.postId) {
+        slug = withSlugSuffix(slug, input.postId.replace(/-/g, "").slice(0, 4));
+      }
+      patch.slug = slug;
+      slugOut = slug;
+    }
+    if (input.fill.seoTitle) patch.seo_title = drafted.seoTitle;
+    if (input.fill.metaDescription) patch.meta_description = drafted.metaDescription;
+    const { error } = await supabase.from("studio_posts").update(patch).eq("id", input.postId);
+    if (error) return { ok: false, error: error.message };
+    revalidatePath(`/studio/posts/${input.postId}`);
+    return {
+      ok: true,
+      slug: slugOut,
+      seoTitle: input.fill.seoTitle ? drafted.seoTitle : undefined,
+      metaDescription: input.fill.metaDescription ? drafted.metaDescription : undefined,
+    };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Something went wrong" };
   }
 }
 
@@ -537,186 +590,201 @@ export async function quickAdjustVariantAction(
   channel: SuggestionChannel,
   adjust: "shorter" | "longer" | "more_detail",
   prefsInput?: PostGenerationPrefs,
-) {
-  const supabase = await requireAdmin();
-  const { data: post } = await supabase.from("studio_posts").select("*").eq("id", postId).single();
-  if (!post) throw new Error("Post not found");
+): Promise<StudioActionResult> {
+  try {
+    const supabase = await requireAdmin();
+    const { data: post } = await supabase.from("studio_posts").select("*").eq("id", postId).single();
+    if (!post) return { ok: false, error: "Post not found." };
 
-  const prefs = normalizeGenerationPrefs(prefsInput ?? post.generation_prefs);
-  const language = post.body_language as "zh-HK" | "en";
-  const sources = await loadPostSources(supabase, postId);
-  const bundles = await loadSourceBundles(supabase, sources);
+    const prefs = normalizeGenerationPrefs(prefsInput ?? post.generation_prefs);
+    const language = post.body_language as "zh-HK" | "en";
+    const sources = await loadPostSources(supabase, postId);
+    const bundles = await loadSourceBundles(supabase, sources);
 
-  const label =
-    adjust === "shorter"
-      ? "Make shorter"
-      : adjust === "longer"
-        ? "Make longer"
-        : "Add more detail from sources";
+    const label =
+      adjust === "shorter"
+        ? "Make shorter"
+        : adjust === "longer"
+          ? "Make longer"
+          : "Add more detail from sources";
 
-  if (channel === "blog") {
-    const body = stripSourcesSection(post.body as string);
-    if (!body.trim()) throw new Error("Write or draft blog content first");
-    const revised = await adjustBlogBody({
-      title: post.title,
-      language,
-      currentBody: body,
-      adjust,
-      sources: adjust === "more_detail" ? bundles : undefined,
-    });
-    const { error: sugErr } = await supabase.from("studio_suggestions").insert({
-      post_id: postId,
-      source_id: null,
-      paragraph: revised,
-      status: "pending",
-      label,
-      channel: "blog",
-    });
-    if (sugErr) throw new Error(sugErr.message);
-  } else {
-    const { data: existing } = await supabase
-      .from("studio_post_variants")
-      .select("content, extra")
-      .eq("post_id", postId)
-      .eq("channel", channel)
-      .maybeSingle();
+    if (channel === "blog") {
+      const body = stripSourcesSection(post.body as string);
+      if (!body.trim()) return { ok: false, error: "Write or draft blog content first." };
+      const revised = await adjustBlogBody({
+        title: post.title,
+        language,
+        currentBody: body,
+        adjust,
+        sources: adjust === "more_detail" ? bundles : undefined,
+      });
+      const { error: sugErr } = await supabase.from("studio_suggestions").insert({
+        post_id: postId,
+        source_id: null,
+        paragraph: revised,
+        status: "pending",
+        label,
+        channel: "blog",
+      });
+      if (sugErr) return { ok: false, error: sugErr.message };
+    } else {
+      const { data: existing } = await supabase
+        .from("studio_post_variants")
+        .select("content, extra")
+        .eq("post_id", postId)
+        .eq("channel", channel)
+        .maybeSingle();
 
-    const content = (existing?.content as string) ?? "";
-    if (!content.trim()) throw new Error("No content to adjust — generate or draft first");
+      const content = (existing?.content as string) ?? "";
+      if (!content.trim()) {
+        return { ok: false, error: "No content to adjust — generate or draft first." };
+      }
 
-    const adjusted = await adjustVariantContent({
-      channel,
-      adjust,
-      postTitle: post.title,
-      language,
-      currentContent: content,
-      currentExtra: (existing?.extra as Record<string, unknown>) ?? {},
-      sources: adjust === "more_detail" ? bundles : undefined,
-      prefs,
-    });
+      const adjusted = await adjustVariantContent({
+        channel,
+        adjust,
+        postTitle: post.title,
+        language,
+        currentContent: content,
+        currentExtra: (existing?.extra as Record<string, unknown>) ?? {},
+        sources: adjust === "more_detail" ? bundles : undefined,
+        prefs,
+      });
 
-    const { error: sugErr } = await supabase.from("studio_suggestions").insert({
-      post_id: postId,
-      source_id: null,
-      paragraph: adjusted.content,
-      status: "pending",
-      label,
-      channel,
-      extra: adjusted.extra ?? {},
-    });
-    if (sugErr) throw new Error(sugErr.message);
+      const { error: sugErr } = await supabase.from("studio_suggestions").insert({
+        post_id: postId,
+        source_id: null,
+        paragraph: adjusted.content,
+        status: "pending",
+        label,
+        channel,
+        extra: adjusted.extra ?? {},
+      });
+      if (sugErr) return { ok: false, error: sugErr.message };
+    }
+
+    revalidatePath(`/studio/posts/${postId}`);
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Adjust failed." };
   }
-
-  revalidatePath(`/studio/posts/${postId}`);
 }
 
 export async function resolveSuggestion(
   suggestionId: string,
   action: "accept" | "dismiss",
   editedText?: string,
-) {
-  const supabase = await requireAdmin();
-  const { data: sug } = await supabase
-    .from("studio_suggestions")
-    .select("*")
-    .eq("id", suggestionId)
-    .single();
-  if (!sug) throw new Error("Suggestion not found");
-
-  if (action === "dismiss") {
-    await supabase
+): Promise<StudioActionResult> {
+  try {
+    const supabase = await requireAdmin();
+    const { data: sug } = await supabase
       .from("studio_suggestions")
-      .update({ status: "dismissed" })
-      .eq("id", suggestionId);
-    revalidatePath(`/studio/posts/${sug.post_id}`);
-    return;
-  }
+      .select("*")
+      .eq("id", suggestionId)
+      .single();
+    if (!sug) return { ok: false, error: "Suggestion not found." };
 
-  const { data: post } = await supabase
-    .from("studio_posts")
-    .select("body, my_take, title, body_language")
-    .eq("id", sug.post_id)
-    .single();
-  if (!post) throw new Error("Post missing");
-
-  const paragraph = editedText ?? (sug.paragraph as string);
-  const channel = (sug.channel as SuggestionChannel) ?? "blog";
-  const extra = (sug.extra as VariantExtra & { social_captions?: { zh?: string; en?: string } }) ?? {};
-
-  if (channel === "blog") {
-    const sources = await loadPostSources(supabase, sug.post_id as string);
-    const sourcesMd = buildSourcesMarkdown(sources);
-    const marker = "## Sources";
-    let newBody: string;
-    const fullBodyReplace =
-      sug.label === "Draft from sources" ||
-      sug.label === "Make shorter" ||
-      sug.label === "Make longer" ||
-      sug.label === "Add more detail from sources";
-
-    if (fullBodyReplace) {
-      newBody = appendSourcesToBody(paragraph, sourcesMd);
-    } else if ((post.body as string).includes(marker)) {
-      newBody = (post.body as string).replace(marker, `${paragraph}\n\n${marker}`);
-    } else {
-      newBody = `${(post.body as string).trim()}\n\n${paragraph}`;
+    if (action === "dismiss") {
+      const { error: dismissErr } = await supabase
+        .from("studio_suggestions")
+        .update({ status: "dismissed" })
+        .eq("id", suggestionId);
+      if (dismissErr) return { ok: false, error: dismissErr.message };
+      revalidatePath(`/studio/posts/${sug.post_id}`);
+      return { ok: true };
     }
 
-    const postUpdate: Record<string, unknown> = { body: newBody };
-    if (extra.key_point) postUpdate.key_point = extra.key_point;
-    if (extra.social_captions) postUpdate.social_captions = extra.social_captions;
-
-    const { error: upErr } = await supabase
+    const { data: post } = await supabase
       .from("studio_posts")
-      .update(postUpdate)
+      .select("body, my_take, title, body_language")
       .eq("id", sug.post_id)
-      .select("id")
       .single();
-    if (upErr) throw new Error(upErr.message);
+    if (!post) return { ok: false, error: "Post missing." };
 
-    await supabase.from("studio_post_versions").insert({
-      post_id: sug.post_id,
-      title: post.title,
-      my_take: post.my_take,
-      body: newBody,
-      body_language: post.body_language,
-    });
-  } else {
-    const variantExtra: VariantExtra = {
-      ...(extra.thread_parts ? { thread_parts: extra.thread_parts } : {}),
-      ...(extra.social_title ? { social_title: extra.social_title } : {}),
-      ...(extra.key_point ? { key_point: extra.key_point } : {}),
-    };
+    const paragraph = editedText ?? (sug.paragraph as string);
+    const channel = (sug.channel as SuggestionChannel) ?? "blog";
+    const extra =
+      (sug.extra as VariantExtra & { social_captions?: { zh?: string; en?: string } }) ?? {};
 
-    const { error: vErr } = await supabase
-      .from("studio_post_variants")
-      .upsert(
-        {
-          post_id: sug.post_id,
-          channel,
-          content: paragraph,
-          extra: variantExtra,
-        },
-        { onConflict: "post_id,channel" },
-      )
-      .select("post_id")
-      .single();
-    if (vErr) throw new Error(vErr.message);
+    if (channel === "blog") {
+      const sources = await loadPostSources(supabase, sug.post_id as string);
+      const sourcesMd = buildSourcesMarkdown(sources);
+      const marker = "## Sources";
+      let newBody: string;
+      const fullBodyReplace =
+        sug.label === "Draft from sources" ||
+        sug.label === "Make shorter" ||
+        sug.label === "Make longer" ||
+        sug.label === "Add more detail from sources";
 
-    await supabase.from("studio_post_variant_versions").insert({
-      post_id: sug.post_id,
-      channel,
-      content: paragraph,
-      extra: variantExtra,
-    });
+      if (fullBodyReplace) {
+        newBody = appendSourcesToBody(paragraph, sourcesMd);
+      } else if ((post.body as string).includes(marker)) {
+        newBody = (post.body as string).replace(marker, `${paragraph}\n\n${marker}`);
+      } else {
+        newBody = `${(post.body as string).trim()}\n\n${paragraph}`;
+      }
+
+      const postUpdate: Record<string, unknown> = { body: newBody };
+      if (extra.key_point) postUpdate.key_point = extra.key_point;
+      if (extra.social_captions) postUpdate.social_captions = extra.social_captions;
+
+      const { error: upErr } = await supabase
+        .from("studio_posts")
+        .update(postUpdate)
+        .eq("id", sug.post_id)
+        .select("id")
+        .single();
+      if (upErr) return { ok: false, error: upErr.message };
+
+      await supabase.from("studio_post_versions").insert({
+        post_id: sug.post_id,
+        title: post.title,
+        my_take: post.my_take,
+        body: newBody,
+        body_language: post.body_language,
+      });
+    } else {
+      const variantExtra: VariantExtra = {
+        ...(extra.thread_parts ? { thread_parts: extra.thread_parts } : {}),
+        ...(extra.social_title ? { social_title: extra.social_title } : {}),
+        ...(extra.key_point ? { key_point: extra.key_point } : {}),
+      };
+
+      const { error: vErr } = await supabase
+        .from("studio_post_variants")
+        .upsert(
+          {
+            post_id: sug.post_id,
+            channel,
+            content: paragraph,
+            extra: variantExtra,
+          },
+          { onConflict: "post_id,channel" },
+        )
+        .select("post_id")
+        .single();
+      if (vErr) return { ok: false, error: vErr.message };
+
+      await supabase.from("studio_post_variant_versions").insert({
+        post_id: sug.post_id,
+        channel,
+        content: paragraph,
+        extra: variantExtra,
+      });
+    }
+
+    const { error: statusErr } = await supabase
+      .from("studio_suggestions")
+      .update({ status: editedText ? "edited" : "accepted" })
+      .eq("id", suggestionId);
+    if (statusErr) return { ok: false, error: statusErr.message };
+
+    revalidatePath(`/studio/posts/${sug.post_id}`);
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Could not update suggestion." };
   }
-
-  await supabase
-    .from("studio_suggestions")
-    .update({ status: editedText ? "edited" : "accepted" })
-    .eq("id", suggestionId);
-
-  revalidatePath(`/studio/posts/${sug.post_id}`);
 }
 
 export async function deletePost(postId: string): Promise<DeletePostResult> {

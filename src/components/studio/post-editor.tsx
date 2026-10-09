@@ -6,9 +6,11 @@ import {
   applyPostComments,
   deletePost,
   draftPostWithAi,
+  fillPostSeo,
   generateVariantFromBlogAction,
   quickAdjustVariantAction,
   publishPostToSite,
+  type SavePostResult,
   saveGenerationPrefs,
   resolvePostComment,
   resolveSuggestion,
@@ -16,6 +18,11 @@ import {
   savePost,
   saveVariant,
 } from "@/app/actions/studio";
+import {
+  isPlaceholderMeta,
+  isPlaceholderSeoTitle,
+  isPlaceholderSlug,
+} from "@/lib/posts/seo-slug";
 import { ChannelSettingsPanel } from "@/components/studio/channel-settings-panel";
 import { GenerationControls, VariantQuickActions } from "@/components/studio/generation-controls";
 import { SourceCard } from "@/components/studio/source-card";
@@ -36,7 +43,7 @@ import {
 } from "@/lib/studio/generation-prefs";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 
 export type EditorSource = {
   id: string;
@@ -153,6 +160,10 @@ export function PostEditor({
   const [slug, setSlug] = useState(post.slug);
   const [seoTitle, setSeoTitle] = useState(post.seo_title ?? post.title);
   const [metaDescription, setMetaDescription] = useState(post.meta_description ?? "");
+  const slugEdited = useRef(false);
+  const seoEdited = useRef(false);
+  const metaEdited = useRef(false);
+  const [seoFilling, setSeoFilling] = useState(false);
   const [myTake, setMyTake] = useState(post.my_take);
   const [body, setBody] = useState(post.body);
   const [lang, setLang] = useState(post.body_language);
@@ -212,7 +223,49 @@ export function PostEditor({
     setMessageIsError(isError);
   }
 
-  function run(fn: () => Promise<void>) {
+  function seoFillFlags() {
+    return {
+      slug: !slugEdited.current && isPlaceholderSlug(slug),
+      seoTitle: !seoEdited.current && isPlaceholderSeoTitle(seoTitle),
+      metaDescription: !metaEdited.current && isPlaceholderMeta(metaDescription),
+    };
+  }
+
+  async function fillSeoFromBody(bodyText: string, quiet = false) {
+    const fill = seoFillFlags();
+    if (!fill.slug && !fill.seoTitle && !fill.metaDescription) {
+      if (!quiet) notify("Slug, SEO title, and meta description are already set.");
+      return;
+    }
+    if (!bodyText.trim()) {
+      if (!quiet) notify("Add a draft body first.", true);
+      return;
+    }
+    setSeoFilling(true);
+    try {
+      const result = await fillPostSeo({
+        postId: post.id,
+        body: bodyText,
+        language: contentLocale,
+        fill,
+      });
+      if (!result.ok) {
+        notify(quiet ? `Added to the draft, but SEO failed: ${result.error}` : result.error, true);
+        return;
+      }
+      if (result.slug) setSlug(result.slug);
+      if (result.seoTitle) setSeoTitle(result.seoTitle);
+      if (result.metaDescription) setMetaDescription(result.metaDescription);
+      notify(
+        quiet ? "Added to the draft. SEO fields filled." : "SEO fields filled. You can still edit them.",
+      );
+      router.refresh();
+    } finally {
+      setSeoFilling(false);
+    }
+  }
+
+  function run(fn: () => Promise<void | SavePostResult>) {
     if (demoMode) {
       notify("Demo only — connect Supabase to save.", true);
       return;
@@ -220,7 +273,11 @@ export function PostEditor({
     start(async () => {
       try {
         setMessage(null);
-        await fn();
+        const result = await fn();
+        if (result && !result.ok) {
+          notify(result.error, true);
+          return;
+        }
         router.refresh();
       } catch (e) {
         notify(e instanceof Error ? e.message : "Something went wrong", true);
@@ -260,7 +317,9 @@ export function PostEditor({
   }
 
   function runQuickAdjust(adjust: "shorter" | "longer" | "more_detail") {
-    run(() => quickAdjustVariantAction(post.id, draftChannel(), adjust, generationPrefs));
+    run(async () =>
+      quickAdjustVariantAction(post.id, draftChannel(), adjust, generationPrefs),
+    );
   }
 
   async function persistBlogPost() {
@@ -583,9 +642,9 @@ export function PostEditor({
                 <VariantSuggestions
                   suggestions={tabSuggestions}
                   demoMode={demoMode}
-                  onAccept={(id) => run(() => resolveSuggestion(id, "accept"))}
-                  onEdit={(id, text) => run(() => resolveSuggestion(id, "accept", text))}
-                  onDismiss={(id) => run(() => resolveSuggestion(id, "dismiss"))}
+                  onAccept={(id) => run(async () => resolveSuggestion(id, "accept"))}
+                  onEdit={(id, text) => run(async () => resolveSuggestion(id, "accept", text))}
+                  onDismiss={(id) => run(async () => resolveSuggestion(id, "dismiss"))}
                 />
                 {creditsBlock && (
                   <div className="studio-credits">
@@ -724,9 +783,9 @@ export function PostEditor({
                 <VariantSuggestions
                   suggestions={tabSuggestions}
                   demoMode={demoMode}
-                  onAccept={(id) => run(() => resolveSuggestion(id, "accept"))}
-                  onEdit={(id, text) => run(() => resolveSuggestion(id, "accept", text))}
-                  onDismiss={(id) => run(() => resolveSuggestion(id, "dismiss"))}
+                  onAccept={(id) => run(async () => resolveSuggestion(id, "accept"))}
+                  onEdit={(id, text) => run(async () => resolveSuggestion(id, "accept", text))}
+                  onDismiss={(id) => run(async () => resolveSuggestion(id, "dismiss"))}
                 />
                 {!showGenerateEmpty && (
                   <div className="mt-4 flex flex-col gap-3">
@@ -754,11 +813,22 @@ export function PostEditor({
           locale={contentLocale}
           post={post}
           slug={slug}
-          setSlug={setSlug}
+          setSlug={(v) => {
+            slugEdited.current = true;
+            setSlug(v);
+          }}
           seoTitle={seoTitle}
-          setSeoTitle={setSeoTitle}
+          setSeoTitle={(v) => {
+            seoEdited.current = true;
+            setSeoTitle(v);
+          }}
           metaDescription={metaDescription}
-          setMetaDescription={setMetaDescription}
+          setMetaDescription={(v) => {
+            metaEdited.current = true;
+            setMetaDescription(v);
+          }}
+          onFillSeo={() => void fillSeoFromBody(stripSourcesForEditor(body))}
+          seoFilling={seoFilling}
           xChars={xChars}
           threadsChars={threadsChars}
           threadParts={variants.x.extra.thread_parts ?? []}
@@ -828,7 +898,7 @@ function VariantChannelEditor({
   onQuickAdjust: (a: "shorter" | "longer" | "more_detail") => void;
   suggestions: EditorSuggestion[];
   demoMode: boolean;
-  run: (fn: () => Promise<void>) => void;
+  run: (fn: () => Promise<void | SavePostResult>) => void;
 }) {
   if (showGenerate) {
     return (
@@ -846,9 +916,9 @@ function VariantChannelEditor({
         <VariantSuggestions
           suggestions={suggestions}
           demoMode={demoMode}
-          onAccept={(id) => run(() => resolveSuggestion(id, "accept"))}
-          onEdit={(id, text) => run(() => resolveSuggestion(id, "accept", text))}
-          onDismiss={(id) => run(() => resolveSuggestion(id, "dismiss"))}
+          onAccept={(id) => run(async () => resolveSuggestion(id, "accept"))}
+          onEdit={(id, text) => run(async () => resolveSuggestion(id, "accept", text))}
+          onDismiss={(id) => run(async () => resolveSuggestion(id, "dismiss"))}
         />
       </div>
     );
@@ -873,9 +943,9 @@ function VariantChannelEditor({
       <VariantSuggestions
         suggestions={suggestions}
         demoMode={demoMode}
-        onAccept={(id) => run(() => resolveSuggestion(id, "accept"))}
-        onEdit={(id, text) => run(() => resolveSuggestion(id, "accept", text))}
-        onDismiss={(id) => run(() => resolveSuggestion(id, "dismiss"))}
+        onAccept={(id) => run(async () => resolveSuggestion(id, "accept"))}
+        onEdit={(id, text) => run(async () => resolveSuggestion(id, "accept", text))}
+        onDismiss={(id) => run(async () => resolveSuggestion(id, "dismiss"))}
       />
       <div className="mt-4 flex flex-col gap-3">
         <GenerationControls

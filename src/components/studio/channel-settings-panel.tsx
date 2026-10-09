@@ -32,6 +32,8 @@ export function ChannelSettingsPanel({
   onGenerationPrefsChange,
   versions,
   onRestoreVersion,
+  onFillSeo,
+  seoFilling = false,
 }: {
   channel: DistributionChannel;
   locale: ContentLocale;
@@ -59,6 +61,8 @@ export function ChannelSettingsPanel({
   onGenerationPrefsChange: (prefs: ChannelGenerationPrefs) => void;
   versions: EditorVersion[];
   onRestoreVersion: (id: string) => void;
+  onFillSeo?: () => void;
+  seoFilling?: boolean;
 }) {
   const channelLabel =
     channel === "blog"
@@ -96,6 +100,17 @@ export function ChannelSettingsPanel({
                 readOnly={demoMode}
               />
             </div>
+            {onFillSeo && (
+              <button
+                type="button"
+                className="studio-btn studio-btn-ghost h-8 text-xs"
+                onClick={onFillSeo}
+                disabled={demoMode || seoFilling}
+                aria-busy={seoFilling}
+              >
+                {seoFilling ? "Filling SEO…" : "Fill SEO"}
+              </button>
+            )}
             <p className="text-xs leading-relaxed text-[var(--karrot-muted)]">
               Publish makes this post public at <strong>/p/{slug || "your-slug"}</strong>.
             </p>
