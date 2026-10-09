@@ -16,7 +16,7 @@ export default async function PostsIndexPage() {
         Public preview.{" "}
         <Link href="/studio" className="font-semibold text-[var(--karrot-accent)]">Content Studio</Link>
         {" · "}
-        <a href="https://karrotdigital.com" className="underline">karrotdigital.com</a>
+        <Link href="/p" className="underline">Published site (/p)</Link>
       </p>
       <ul className="mt-8 space-y-4">
         {(posts ?? []).map((p) => (
