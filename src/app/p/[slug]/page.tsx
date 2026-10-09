@@ -10,6 +10,7 @@ import {
   shouldShowSampleCards,
   sortPostsNewest,
 } from "@/lib/blog/queries";
+import { filterPublicPosts } from "@/lib/blog/public-posts";
 import { postDisplayTitle } from "@/lib/blog/format";
 import type { PublicBlogPost } from "@/lib/blog/types";
 import { createClient } from "@/lib/supabase/server";
@@ -29,7 +30,7 @@ async function loadPublishedPosts() {
     .select(POST_SELECT)
     .eq("status", "published")
     .order("published_at", { ascending: false });
-  return sortPostsNewest((data ?? []) as PublicBlogPost[]);
+  return filterPublicPosts(sortPostsNewest((data ?? []) as PublicBlogPost[]));
 }
 
 async function loadPost(slug: string) {
@@ -109,7 +110,11 @@ export default async function PublicBlogPostPage({
         <div className="post-grid">
           {related.map((card) =>
             card.kind === "sample" ? (
-              <BlogPostCard key={card.post.id} sample={card.post} />
+              <BlogPostCard
+                key={card.post.id}
+                sample={card.post}
+                samplePrevious={card.previous}
+              />
             ) : (
               <BlogPostCard
                 key={card.post.slug}

@@ -1,6 +1,7 @@
-import type { PublicBlogPost } from "@/lib/blog/types";
 import type { PostCategory } from "@/lib/blog/categories";
+import { filterPublicPosts } from "@/lib/blog/public-posts";
 import { SAMPLE_POST_CARDS, type SamplePostCard } from "@/lib/blog/sample-posts";
+import type { PublicBlogPost } from "@/lib/blog/types";
 
 export type GridCard =
   | { kind: "post"; post: PublicBlogPost }
@@ -64,7 +65,7 @@ export function filterGridCards(cards: GridCard[], category: PostCategory | "all
 
 export type RelatedCard =
   | { kind: "post"; post: PublicBlogPost; previous: boolean }
-  | { kind: "sample"; post: SamplePostCard };
+  | { kind: "sample"; post: SamplePostCard; previous?: boolean };
 
 export function buildMoreInCategory(
   allPublished: PublicBlogPost[],
@@ -72,38 +73,43 @@ export function buildMoreInCategory(
   includeSamples: boolean,
   limit = 3,
 ): RelatedCard[] {
-  const sorted = sortPostsNewest(allPublished);
-  const same = sorted.filter(
-    (p) => p.slug !== current.slug && p.category && p.category === current.category,
-  );
-  const picked: RelatedCard[] = same.slice(0, limit).map((p) => ({
-    kind: "post",
-    post: p,
-    previous: false,
-  }));
+  const sorted = filterPublicPosts(sortPostsNewest(allPublished));
+  const picked: RelatedCard[] = [];
+  const usedSampleIds = new Set<string>();
 
-  if (picked.length < limit) {
-    const rest = sorted.filter(
-      (p) =>
-        p.slug !== current.slug &&
-        (!p.category || p.category !== current.category) &&
-        !picked.some((x) => x.kind === "post" && x.post.slug === p.slug),
-    );
-    for (const p of rest) {
-      if (picked.length >= limit) break;
-      picked.push({ kind: "post", post: p, previous: true });
+  const pushPost = (p: PublicBlogPost, previous: boolean) => {
+    if (picked.length >= limit) return;
+    if (p.slug === current.slug) return;
+    if (picked.some((x) => x.kind === "post" && x.post.slug === p.slug)) return;
+    picked.push({ kind: "post", post: p, previous });
+  };
+
+  const pushSample = (s: SamplePostCard, previous: boolean) => {
+    if (picked.length >= limit) return;
+    if (usedSampleIds.has(s.id)) return;
+    usedSampleIds.add(s.id);
+    picked.push({ kind: "sample", post: s, previous });
+  };
+
+  for (const p of sorted) {
+    if (p.category && p.category === current.category) pushPost(p, false);
+  }
+
+  if (includeSamples && picked.length < limit) {
+    for (const s of SAMPLE_POST_CARDS) {
+      if (s.category !== current.category) continue;
+      pushSample(s, false);
     }
   }
 
-  if (picked.length < limit && includeSamples) {
-    const samples = SAMPLE_POST_CARDS.filter(
-      (s) =>
-        s.category === current.category &&
-        !picked.some((x) => x.kind === "sample" && x.post.id === s.id),
-    );
-    for (const s of samples) {
-      if (picked.length >= limit) break;
-      picked.push({ kind: "sample", post: s });
+  for (const p of sorted) {
+    if (!p.category || p.category !== current.category) pushPost(p, true);
+  }
+
+  if (includeSamples && picked.length < limit) {
+    for (const s of SAMPLE_POST_CARDS) {
+      if (s.category === current.category) continue;
+      pushSample(s, true);
     }
   }
 
@@ -114,7 +120,7 @@ export function adjacentPosts(
   allPublished: PublicBlogPost[],
   currentSlug: string,
 ): { prev: PublicBlogPost | null; next: PublicBlogPost | null } {
-  const sorted = sortPostsNewest(allPublished);
+  const sorted = filterPublicPosts(sortPostsNewest(allPublished));
   const idx = sorted.findIndex((p) => p.slug === currentSlug);
   if (idx < 0) return { prev: null, next: null };
   return {

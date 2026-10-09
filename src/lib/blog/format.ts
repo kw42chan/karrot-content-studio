@@ -17,11 +17,21 @@ export function readTimeLabel(minutes: number | null | undefined): string {
   return `${m} min read`;
 }
 
-export function postDisplayTitle(post: {
+import { publicDisplayTitle } from "@/lib/blog/public-posts";
+
+export function postDisplayTitle(entry: {
   seo_title?: string | null;
   title: string;
+  slug?: string;
 }): string {
-  return (post.seo_title?.trim() || post.title).trim();
+  if (entry.slug) {
+    return publicDisplayTitle({
+      title: entry.title,
+      slug: entry.slug,
+      seo_title: entry.seo_title,
+    });
+  }
+  return (entry.seo_title?.trim() || entry.title).trim();
 }
 
 export function postCardExcerpt(post: {

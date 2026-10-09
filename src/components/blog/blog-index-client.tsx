@@ -15,6 +15,7 @@ import {
   shouldShowSampleCards,
   type GridCard,
 } from "@/lib/blog/queries";
+import { filterPublicPosts, pickFeaturedPost } from "@/lib/blog/public-posts";
 import type { PublicBlogPost } from "@/lib/blog/types";
 import { useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
@@ -29,12 +30,16 @@ export function BlogIndexClient({ posts }: { posts: PublicBlogPost[] }) {
       setCategory(raw as PostCategory);
     }
   }, [searchParams]);
-  const includeSamples = shouldShowSampleCards(posts.length);
-  const featured = posts[0] ?? null;
-  const counts = useMemo(() => countByCategory(posts, includeSamples), [posts, includeSamples]);
+  const publicPosts = useMemo(() => filterPublicPosts(posts), [posts]);
+  const featured = useMemo(() => pickFeaturedPost(posts), [posts]);
+  const includeSamples = shouldShowSampleCards(publicPosts.length);
+  const counts = useMemo(
+    () => countByCategory(publicPosts, includeSamples),
+    [publicPosts, includeSamples],
+  );
   const allCards = useMemo(
-    () => buildIndexGrid(posts, featured?.slug ?? null, includeSamples),
-    [posts, featured, includeSamples],
+    () => buildIndexGrid(publicPosts, featured?.slug ?? null, includeSamples),
+    [publicPosts, featured, includeSamples],
   );
   const visible = useMemo(() => filterGridCards(allCards, category), [allCards, category]);
   const sampleCount = includeSamples ? allCards.filter((c) => c.kind === "sample").length : 0;

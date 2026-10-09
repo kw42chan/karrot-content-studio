@@ -5,6 +5,7 @@ import {
   postDisplayTitle,
   readTimeLabel,
 } from "@/lib/blog/format";
+import { coverWordForPost } from "@/lib/blog/public-posts";
 import type { PublicBlogPost } from "@/lib/blog/types";
 import type { SamplePostCard } from "@/lib/blog/sample-posts";
 import Link from "next/link";
@@ -24,14 +25,11 @@ function Cover({ post, sample }: { post?: PublicBlogPost; sample?: SamplePostCar
       </div>
     );
   }
-  const words = postDisplayTitle(post!).split(/\s+/).slice(0, 2);
-  const coverText =
-    post!.body_language === "zh-HK"
-      ? post!.title.slice(0, 6)
-      : words.join(" ");
+  const coverText = coverWordForPost(post!);
+  const coverLang = post!.body_language === "zh-HK" ? "zh-Hant-HK" : "en";
   return (
     <div className="cover">
-      <span className="cover-word h-anton" lang={post!.body_language === "zh-HK" ? "zh-Hant-HK" : "en"}>
+      <span className="cover-word h-anton" lang={coverLang} style={{ whiteSpace: "pre-line" }}>
         {coverText}
       </span>
     </div>
@@ -42,10 +40,12 @@ export function BlogPostCard({
   post,
   sample,
   previousLabel,
+  samplePrevious,
 }: {
   post?: PublicBlogPost;
   sample?: SamplePostCard;
   previousLabel?: boolean;
+  samplePrevious?: boolean;
 }) {
   if (sample) {
     return (
@@ -54,6 +54,9 @@ export function BlogPostCard({
         <div className="post-card-body">
           <div className="card-top">
             <span className="cat-label">{categoryLabel(sample.category)}</span>
+            {samplePrevious && (
+              <span className="sample-tag" style={{ borderStyle: "solid" }}>Previous post</span>
+            )}
             <span className="sample-tag">Sample</span>
           </div>
           <h3 className="h-anton">{sample.title}</h3>
