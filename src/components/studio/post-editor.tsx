@@ -264,6 +264,9 @@ export function PostEditor({
       if (result.metaDescription) setMetaDescription(result.metaDescription);
       notify(quiet ? "Added to the draft. SEO fields filled." : "SEO fields filled. You can still edit them.");
       router.refresh();
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "SEO fill failed.";
+      notify(quiet ? `Added to the draft, but SEO failed: ${msg}` : msg, true);
     } finally {
       setSeoFilling(false);
     }
@@ -316,8 +319,46 @@ export function PostEditor({
     });
   }
 
+
+  async function acceptSuggestion(id: string, editedText?: string) {
+    const result = await resolveSuggestion(id, "accept", editedText);
+    if (!result.ok) {
+      notify(result.error, true);
+      return;
+    }
+    if (result.body) {
+      setBody(result.body);
+    }
+    const isDraftAccept =
+      result.channel === "blog" &&
+      (result.label === "Draft from sources" ||
+        result.label === "Make shorter" ||
+        result.label === "Make longer" ||
+        result.label === "Add more detail from sources");
+    if (isDraftAccept && result.body) {
+      await fillSeoFromBody(stripSourcesForEditor(result.body), true);
+    } else {
+      notify("Suggestion applied.");
+    }
+  }
+
+  async function dismissSuggestion(id: string) {
+    const result = await resolveSuggestion(id, "dismiss");
+    if (!result.ok) {
+      notify(result.error, true);
+      return;
+    }
+  }
+
   function runQuickAdjust(adjust: "shorter" | "longer" | "more_detail") {
-    run(() => quickAdjustVariantAction(post.id, draftChannel(), adjust, generationPrefs));
+    run(async () => {
+      const result = await quickAdjustVariantAction(post.id, draftChannel(), adjust, generationPrefs);
+      if (!result.ok) {
+        notify(result.error, true);
+        return;
+      }
+      notify("Suggestion ready — review it below.");
+    });
   }
 
   async function handleSave() {
@@ -654,9 +695,9 @@ export function PostEditor({
                 <VariantSuggestions
                   suggestions={tabSuggestions}
                   demoMode={demoMode}
-                  onAccept={(id) => run(() => resolveSuggestion(id, "accept"))}
-                  onEdit={(id, text) => run(() => resolveSuggestion(id, "accept", text))}
-                  onDismiss={(id) => run(() => resolveSuggestion(id, "dismiss"))}
+                  onAccept={(id) => run(() => acceptSuggestion(id))}
+                  onEdit={(id, text) => run(() => acceptSuggestion(id, text))}
+                  onDismiss={(id) => run(() => dismissSuggestion(id))}
                 />
                 {creditsBlock && (
                   <div className="studio-credits">
@@ -795,9 +836,9 @@ export function PostEditor({
                 <VariantSuggestions
                   suggestions={tabSuggestions}
                   demoMode={demoMode}
-                  onAccept={(id) => run(() => resolveSuggestion(id, "accept"))}
-                  onEdit={(id, text) => run(() => resolveSuggestion(id, "accept", text))}
-                  onDismiss={(id) => run(() => resolveSuggestion(id, "dismiss"))}
+                  onAccept={(id) => run(() => acceptSuggestion(id))}
+                  onEdit={(id, text) => run(() => acceptSuggestion(id, text))}
+                  onDismiss={(id) => run(() => dismissSuggestion(id))}
                 />
                 {!showGenerateEmpty && (
                   <div className="mt-4 flex flex-col gap-3">
@@ -956,9 +997,24 @@ function VariantChannelEditor({
       <VariantSuggestions
         suggestions={suggestions}
         demoMode={demoMode}
-        onAccept={(id) => run(() => resolveSuggestion(id, "accept"))}
-        onEdit={(id, text) => run(() => resolveSuggestion(id, "accept", text))}
-        onDismiss={(id) => run(() => resolveSuggestion(id, "dismiss"))}
+        onAccept={(id) =>
+          run(async () => {
+            const result = await resolveSuggestion(id, "accept");
+            if (!result.ok) throw new Error(result.error);
+          })
+        }
+        onEdit={(id, text) =>
+          run(async () => {
+            const result = await resolveSuggestion(id, "accept", text);
+            if (!result.ok) throw new Error(result.error);
+          })
+        }
+        onDismiss={(id) =>
+          run(async () => {
+            const result = await resolveSuggestion(id, "dismiss");
+            if (!result.ok) throw new Error(result.error);
+          })
+        }
       />
       <div className="mt-4 flex flex-col gap-3">
         <GenerationControls

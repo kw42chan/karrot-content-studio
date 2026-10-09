@@ -50,7 +50,14 @@ ${params.body.trim().slice(0, 6000)}`;
   const { content } = await completeText({ prompt, maxTokens: 400 });
   const parsed = parseSeoDraft(content);
   if (!parsed.seoTitle || !parsed.metaDescription || !parsed.slug) {
-    throw new Error("The AI response was missing a title, description, or slug. Please try again.");
+    const missing = [
+      !parsed.seoTitle && "title",
+      !parsed.metaDescription && "description",
+      !parsed.slug && "slug",
+    ].filter(Boolean);
+    throw new Error(
+      `The AI response was missing ${missing.join(", ")}. Please try Fill SEO again.`,
+    );
   }
   return parsed;
 }
