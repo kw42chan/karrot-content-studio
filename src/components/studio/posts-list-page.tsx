@@ -3,6 +3,7 @@
 import { deletePost } from "@/app/actions/studio";
 import { PostsList, type StudioListPost } from "@/components/studio/posts-list";
 import { useNewPost } from "@/components/studio/use-new-post";
+import { navigateToStudioPostsHome } from "@/lib/studio/routes";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
@@ -33,7 +34,7 @@ export function PostsListPage({
         window.alert(result.error);
         return;
       }
-      router.refresh();
+      navigateToStudioPostsHome(router);
     } finally {
       setDeletingId(null);
     }

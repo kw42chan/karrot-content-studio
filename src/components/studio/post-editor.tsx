@@ -36,6 +36,7 @@ import {
   type ChannelGenerationPrefs,
 } from "@/lib/studio/generation-prefs";
 import type { PostCategory } from "@/lib/blog/categories";
+import { navigateToStudioPostsHomeAfterEditorDelete } from "@/lib/studio/routes";
 import {
   isPlaceholderMeta,
   isPlaceholderSeoTitle,
@@ -389,8 +390,8 @@ export function PostEditor({
         notify(result.error, true);
         return;
       }
-      router.push("/studio");
-      router.refresh();
+      navigateToStudioPostsHomeAfterEditorDelete();
+      return;
     } finally {
       setDeleting(false);
     }
