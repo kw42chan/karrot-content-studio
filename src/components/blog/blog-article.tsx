@@ -8,7 +8,7 @@ import {
   readTimeLabel,
   stripSourcesSection,
 } from "@/lib/blog/format";
-import type { PublicBlogPost } from "@/lib/blog/types";
+import type { KeyPoint, PublicBlogPost } from "@/lib/blog/types";
 import { marked } from "marked";
 import Link from "next/link";
 
@@ -17,9 +17,11 @@ marked.setOptions({ gfm: true, breaks: true });
 export function BlogArticle({ post }: { post: PublicBlogPost }) {
   const title = postDisplayTitle(post);
   const dek = postCardExcerpt(post);
+  const myTake = post.my_take?.trim() ?? "";
   const body = stripSourcesSection(post.body);
   const html = marked.parse(body) as string;
   const lang = post.body_language === "zh-HK" ? "zh-Hant-HK" : "en";
+  const keyPoints = (post.key_points ?? []) as KeyPoint[];
 
   return (
     <article>
@@ -45,19 +47,49 @@ export function BlogArticle({ post }: { post: PublicBlogPost }) {
         </div>
       </header>
 
+      {keyPoints.length > 0 && (
+        <section className="in-guide post-in-guide" lang={lang} aria-labelledby="post-guide-label">
+          <div className="eyebrow" id="post-guide-label">
+            In this guide
+          </div>
+          <ol>
+            {keyPoints.slice(0, 5).map((kp, i) => (
+              <li key={i}>
+                <span className="n">{String(i + 1).padStart(2, "0")}</span>
+                <span>
+                  {kp.title}
+                  {kp.subtitle ? <small>{kp.subtitle}</small> : null}
+                </span>
+              </li>
+            ))}
+          </ol>
+        </section>
+      )}
+
+      {myTake && (
+        <section className="post-my-take" aria-labelledby="post-my-take-label">
+          <p className="eyebrow" id="post-my-take-label" lang="en">
+            My take
+          </p>
+          <p className="post-my-take-body" lang={lang}>
+            {myTake}
+          </p>
+        </section>
+      )}
+
       <div className="prose blog-prose" lang={lang} dangerouslySetInnerHTML={{ __html: html }} />
 
       <div className="post-end" lang="en">
-        <div className="chips">
-          <span className="muted" style={{ font: "500 13px Roboto,sans-serif", marginRight: 4 }}>
-            Filed under
-          </span>
-          {post.category && (
+        {post.category ? (
+          <div className="chips">
+            <span className="muted" style={{ font: "500 13px Roboto,sans-serif", marginRight: 4 }}>
+              Filed under
+            </span>
             <Link className="chip chip-sm" href={categoryHref(post.category)}>
               {categoryLabel(post.category)}
             </Link>
-          )}
-        </div>
+          </div>
+        ) : null}
         <BlogShare title={title} slug={post.slug} />
       </div>
 

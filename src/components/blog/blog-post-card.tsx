@@ -28,7 +28,7 @@ export function BlogPostCard({
       <Cover post={post} />
       <div className="post-card-body">
         <div className="card-top">
-          <span className="cat-label">{categoryLabel(post.category)}</span>
+          {post.category ? <span className="cat-label">{categoryLabel(post.category)}</span> : null}
           {previousLabel && <span className="sample-tag" style={{ borderStyle: "solid" }}>Previous post</span>}
         </div>
         <h3 className="h-anton" lang={post.body_language === "zh-HK" ? "zh-Hant-HK" : "en"}>

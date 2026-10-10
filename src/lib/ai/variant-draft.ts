@@ -174,6 +174,12 @@ function maxTokensForChannel(channel: SuggestionChannel, prefs: ChannelGeneratio
   return 4096;
 }
 
+function languageLine(language: "zh-HK" | "en"): string {
+  return language === "zh-HK"
+    ? "Write in Traditional Chinese (香港書面語)."
+    : "Write in English.";
+}
+
 function channelPrompt(
   channel: SuggestionChannel,
   language: "zh-HK" | "en",
@@ -181,9 +187,9 @@ function channelPrompt(
 ): string {
   switch (channel) {
     case "x":
-      return xPrompt(prefs.x.mode);
+      return xPrompt(prefs.x.mode, language);
     case "threads":
-      return threadsPrompt(prefs.threads.length);
+      return threadsPrompt(prefs.threads.length, language);
     case "zh":
       return instagramPrompt("zh", prefs.instagram.length);
     case "en":
@@ -193,23 +199,25 @@ function channelPrompt(
   }
 }
 
-function xPrompt(mode: XLengthPref): string {
+function xPrompt(mode: XLengthPref, language: "zh-HK" | "en"): string {
+  const lang = languageLine(language);
   if (mode === "single") {
-    return `Channel: X (Twitter). Single post only, max 280 characters.
+    return `Channel: X (Twitter). Single post only, max 280 characters. ${lang}
 Return JSON: { "content": "tweet", "extra": { "thread_parts": [] } }`;
   }
   const n = mode === "thread_3" ? 3 : mode === "thread_5" ? 5 : 8;
-  return `Channel: X (Twitter). Write a THREAD of exactly ${n} posts.
+  return `Channel: X (Twitter). Write a THREAD of exactly ${n} posts. ${lang}
 Post 1 is "content" (max 280 chars). Posts 2-${n} go in extra.thread_parts (each max 280 chars).
 Return JSON: { "content": "tweet 1", "extra": { "thread_parts": ["tweet 2", ...] } }`;
 }
 
-function threadsPrompt(length: ThreadsLengthPref): string {
+function threadsPrompt(length: ThreadsLengthPref, language: "zh-HK" | "en"): string {
+  const lang = languageLine(language);
   if (length === "short") {
-    return `Channel: Threads. SHORT post — under 200 characters total.
+    return `Channel: Threads. SHORT post — under 200 characters total. ${lang}
 Return JSON: { "content": "threads post text" }`;
   }
-  return `Channel: Threads. FULL post — up to 500 characters, use the space for substance.
+  return `Channel: Threads. FULL post — up to 500 characters, use the space for substance. ${lang}
 Return JSON: { "content": "threads post text" }`;
 }
 

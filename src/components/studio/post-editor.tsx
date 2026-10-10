@@ -38,10 +38,19 @@ import {
 import type { PostCategory } from "@/lib/blog/categories";
 import { navigateToStudioPostsHomeAfterEditorDelete } from "@/lib/studio/routes";
 import {
+  effectiveSeoTitle,
   isPlaceholderMeta,
   isPlaceholderSeoTitle,
   isPlaceholderSlug,
 } from "@/lib/posts/seo-slug";
+import {
+  deriveMetaDescription,
+  proposeSlugFromTitle,
+  publishPreflightMessage,
+  publishValidationMessage,
+  resolvePublishFields,
+} from "@/lib/posts/publish-prep";
+import { formatStudioDateTimeUtc } from "@/lib/format/timestamp";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
@@ -64,6 +73,7 @@ export type EditorSuggestion = {
   source_id: string | null;
   label?: string;
   channel?: SuggestionChannel;
+  extra?: { social_title?: string; key_point?: string; thread_parts?: string[] };
 };
 
 export type EditorComment = {
@@ -101,31 +111,46 @@ type VariantState = Record<"x" | "threads" | "zh" | "en", PostVariantRecord>;
 
 type MobileStep = "sources" | "draft" | "settings";
 
+function canonicalKeyPoint(post: EditorPost): string {
+  return post.key_point?.trim() ?? "";
+}
+
+function withCanonicalKeyPoint(
+  row: PostVariantRecord | undefined,
+  post: EditorPost,
+  fallback: PostVariantRecord,
+): PostVariantRecord {
+  const kp = canonicalKeyPoint(post);
+  if (!row) return { ...fallback, extra: { ...fallback.extra, key_point: kp } };
+  return { ...row, extra: { ...row.extra, key_point: kp } };
+}
+
 function buildInitialVariants(
   post: EditorPost,
   fromDb: Partial<VariantState>,
 ): VariantState {
+  const kp = canonicalKeyPoint(post);
   return {
     x: fromDb.x ?? { channel: "x", content: "", extra: { thread_parts: [] } },
     threads: fromDb.threads ?? { channel: "threads", content: "", extra: {} },
-    zh: fromDb.zh ?? {
+    zh: withCanonicalKeyPoint(fromDb.zh, post, {
       channel: "zh",
       content: post.social_captions?.zh ?? "",
       extra: {
         social_title: post.social_title ?? post.title,
-        key_point: post.key_point ?? "",
+        key_point: kp,
         aspect: "square",
       },
-    },
-    en: fromDb.en ?? {
+    }),
+    en: withCanonicalKeyPoint(fromDb.en, post, {
       channel: "en",
       content: post.social_captions?.en ?? "",
       extra: {
         social_title: post.social_title ?? post.title,
-        key_point: post.key_point ?? "",
+        key_point: kp,
         aspect: "square",
       },
-    },
+    }),
   };
 }
 
@@ -152,13 +177,18 @@ export function PostEditor({
 }) {
   const router = useRouter();
   const studioNav = useStudioNav();
-  const [pending, start] = useTransition();
+  const [, start] = useTransition();
+  const [working, setWorking] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [publishing, setPublishing] = useState(false);
+  const actionLocked = working || saving || publishing;
   const [activeChannel, setActiveChannel] = useState<DistributionChannel>(initialChannel);
   const [contentLocale, setContentLocale] = useState<ContentLocale>(
     initialLocale ?? post.body_language,
   );
   const [mobileStep, setMobileStep] = useState<MobileStep>("draft");
   const [title, setTitle] = useState(post.title);
+  const [status, setStatus] = useState(post.status);
   const [slug, setSlug] = useState(post.slug);
   const [seoTitle, setSeoTitle] = useState(post.seo_title ?? post.title);
   const [metaDescription, setMetaDescription] = useState(post.meta_description ?? "");
@@ -171,6 +201,7 @@ export function PostEditor({
   const [myTake, setMyTake] = useState(post.my_take);
   const [body, setBody] = useState(post.body);
   const [lang, setLang] = useState(post.body_language);
+  const [keyPoint, setKeyPointState] = useState(() => canonicalKeyPoint(post));
   const [variants, setVariants] = useState<VariantState>(() =>
     buildInitialVariants(post, initialVariantsFromDb),
   );
@@ -191,14 +222,40 @@ export function PostEditor({
   const igAspect = variants[igStorage].extra.aspect ?? "square";
 
   useEffect(() => {
-    setLocalSuggestions(suggestions);
+    setStatus(post.status);
+  }, [post.status]);
+
+  useEffect(() => {
+    setMyTake(post.my_take);
+  }, [post.my_take]);
+
+  useEffect(() => {
+    setLocalSuggestions((prev) => {
+      const merged = new Map<string, EditorSuggestion>();
+      for (const s of suggestions) merged.set(s.id, s);
+      for (const s of prev) {
+        if (!merged.has(s.id)) merged.set(s.id, s);
+      }
+      return Array.from(merged.values());
+    });
   }, [suggestions]);
   useEffect(() => {
     setComments(initialComments);
   }, [initialComments]);
   useEffect(() => {
+    setKeyPointState(canonicalKeyPoint(post));
     setVariants(buildInitialVariants(post, initialVariantsFromDb));
   }, [initialVariantsFromDb, post]);
+
+  function setKeyPoint(value: string) {
+    setKeyPointState(value);
+    setVariants((v) => ({
+      ...v,
+      zh: { ...v.zh, extra: { ...v.zh.extra, key_point: value } },
+      en: { ...v.en, extra: { ...v.en.extra, key_point: value } },
+    }));
+    setOgTick((t) => t + 1);
+  }
 
   useEffect(() => {
     if (activeChannel === "blog") {
@@ -215,8 +272,16 @@ export function PostEditor({
   const bodyDisplay = useMemo(() => stripSourcesForEditor(body), [body]);
   const creditsBlock = useMemo(() => extractSourcesBlock(body), [body]);
 
-  const ogTitle = variants[igStorage].extra.social_title ?? title;
-  const ogKey = variants[igStorage].extra.key_point ?? "";
+  function imageHeadlineForLocale(storage: "zh" | "en"): string {
+    const custom = variants[storage].extra.social_title?.trim() ?? "";
+    if (custom && !isPlaceholderSeoTitle(custom)) return custom;
+    const t = title.trim();
+    if (t && !isPlaceholderSeoTitle(t)) return t;
+    return custom || t || "Post";
+  }
+
+  const ogTitle = imageHeadlineForLocale(igStorage);
+  const ogKey = keyPoint;
   const socialTitleEnc = encodeURIComponent(ogTitle);
   const socialKeyEnc = encodeURIComponent(ogKey);
   const squareOg = `/api/og/social?title=${socialTitleEnc}&keyPoint=${socialKeyEnc}&format=square&v=${ogTick}`;
@@ -229,16 +294,24 @@ export function PostEditor({
     setMessageIsError(isError);
   }
 
-  function seoFillFlags() {
+  function seoFillNeeds() {
+    const resolvedSeo = effectiveSeoTitle(seoTitle, title);
     return {
-      slug: !slugEdited.current && isPlaceholderSlug(slug),
-      seoTitle: !seoEdited.current && isPlaceholderSeoTitle(seoTitle),
-      metaDescription: !metaEdited.current && isPlaceholderMeta(metaDescription),
+      slug: isPlaceholderSlug(slug) && !slugEdited.current,
+      seoTitle: isPlaceholderSeoTitle(resolvedSeo) && !seoEdited.current,
+      metaDescription: isPlaceholderMeta(metaDescription),
     };
   }
 
+  function appendLocalSuggestion(s: EditorSuggestion) {
+    setLocalSuggestions((list) => {
+      if (list.some((x) => x.id === s.id)) return list;
+      return [s, ...list];
+    });
+  }
+
   async function fillSeoFromBody(bodyText: string, quiet = false) {
-    const fill = seoFillFlags();
+    const fill = seoFillNeeds();
     if (!fill.slug && !fill.seoTitle && !fill.metaDescription) {
       if (!quiet) notify("Slug, SEO title, and meta description are already set.");
       return;
@@ -251,17 +324,30 @@ export function PostEditor({
     try {
       const result = await fillPostSeo({
         postId: post.id,
+        title,
+        myTake,
         body: bodyText,
         language: contentLocale,
+        currentSlug: slug,
+        currentSeoTitle: seoTitle,
         fill,
       });
       if (!result.ok) {
         notify(quiet ? `Added to the draft, but SEO failed: ${result.error}` : result.error, true);
         return;
       }
-      if (result.slug) setSlug(result.slug);
-      if (result.seoTitle) setSeoTitle(result.seoTitle);
-      if (result.metaDescription) setMetaDescription(result.metaDescription);
+      if (result.slug) {
+        setSlug(result.slug);
+        slugEdited.current = false;
+      }
+      if (result.seoTitle) {
+        setSeoTitle(result.seoTitle);
+        seoEdited.current = false;
+      }
+      if (result.metaDescription !== undefined) {
+        setMetaDescription(result.metaDescription);
+        metaEdited.current = false;
+      }
       notify(quiet ? "Added to the draft. SEO fields filled." : "SEO fields filled. You can still edit them.");
       router.refresh();
     } catch (e) {
@@ -272,19 +358,57 @@ export function PostEditor({
     }
   }
 
-  function run(fn: () => Promise<void>) {
+  function safeRefresh() {
+    try {
+      router.refresh();
+    } catch {
+      // Keep the editor usable if RSC refresh fails.
+    }
+  }
+
+  async function run(fn: () => Promise<void>, options?: { refresh?: boolean }) {
     if (demoMode) {
       notify("Demo only — connect Supabase to save.", true);
       return;
     }
-    start(async () => {
-      try {
-        setMessage(null);
-        await fn();
-        router.refresh();
-      } catch (e) {
-        notify(e instanceof Error ? e.message : "Something went wrong", true);
+    setWorking(true);
+    try {
+      setMessage(null);
+      await fn();
+      if (options?.refresh) {
+        safeRefresh();
       }
+    } catch (e) {
+      notify(e instanceof Error ? e.message : "Something went wrong", true);
+    } finally {
+      setWorking(false);
+    }
+  }
+
+  async function runGenerateFromBlog(channel: "x" | "threads" | "zh" | "en") {
+    await run(async () => {
+      const result = await generateVariantFromBlogAction(
+        post.id,
+        channel,
+        generationPrefs,
+        contentLocale,
+      );
+      if (!result.ok) {
+        notify(result.error, true);
+        return;
+      }
+      if (result.suggestion) {
+        appendLocalSuggestion({
+          id: result.suggestion.id,
+          paragraph: result.suggestion.paragraph,
+          source_id: result.suggestion.source_id,
+          label: result.suggestion.label,
+          channel: result.suggestion.channel,
+          extra: result.suggestion.extra,
+        });
+      }
+      notify("Generated from blog — review the suggestion below.");
+      safeRefresh();
     });
   }
 
@@ -321,16 +445,44 @@ export function PostEditor({
 
 
   async function acceptSuggestion(id: string, editedText?: string) {
+    const sug = localSuggestions.find((s) => s.id === id);
     const result = await resolveSuggestion(id, "accept", editedText);
     if (!result.ok) {
       notify(result.error, true);
       return;
     }
+    setLocalSuggestions((list) => list.filter((s) => s.id !== id));
     if (result.body) {
       setBody(result.body);
     }
+    const channel = result.channel ?? sug?.channel ?? "blog";
+    if (channel === "zh" || channel === "en" || channel === "x" || channel === "threads") {
+      const paragraph = editedText ?? sug?.paragraph ?? "";
+      const fromSug = sug?.extra;
+      setVariants((v) => ({
+        ...v,
+        [channel]: {
+          ...v[channel],
+          content: paragraph,
+          extra: {
+            ...v[channel].extra,
+            ...(fromSug?.thread_parts ? { thread_parts: fromSug.thread_parts } : {}),
+            ...(channel === "zh" || channel === "en"
+              ? {
+                  social_title: fromSug?.social_title ?? v[channel].extra.social_title ?? title,
+                  key_point: v[channel].extra.key_point ?? "",
+                }
+              : {}),
+          },
+        },
+      }));
+      if (fromSug?.key_point?.trim() && (channel === "zh" || channel === "en")) {
+        setKeyPoint(fromSug.key_point.trim());
+      }
+      if (channel === "zh" || channel === "en") setOgTick((t) => t + 1);
+    }
     const isDraftAccept =
-      result.channel === "blog" &&
+      channel === "blog" &&
       (result.label === "Draft from sources" ||
         result.label === "Make shorter" ||
         result.label === "Make longer" ||
@@ -339,6 +491,7 @@ export function PostEditor({
       await fillSeoFromBody(stripSourcesForEditor(result.body), true);
     } else {
       notify("Suggestion applied.");
+      safeRefresh();
     }
   }
 
@@ -348,16 +501,28 @@ export function PostEditor({
       notify(result.error, true);
       return;
     }
+    setLocalSuggestions((list) => list.filter((s) => s.id !== id));
   }
 
   function runQuickAdjust(adjust: "shorter" | "longer" | "more_detail") {
-    run(async () => {
+    void run(async () => {
       const result = await quickAdjustVariantAction(post.id, draftChannel(), adjust, generationPrefs);
       if (!result.ok) {
         notify(result.error, true);
         return;
       }
+      if (result.suggestion) {
+        appendLocalSuggestion({
+          id: result.suggestion.id,
+          paragraph: result.suggestion.paragraph,
+          source_id: result.suggestion.source_id,
+          label: result.suggestion.label,
+          channel: result.suggestion.channel,
+          extra: result.suggestion.extra,
+        });
+      }
       notify("Suggestion ready — review it below.");
+      safeRefresh();
     });
   }
 
@@ -366,8 +531,19 @@ export function PostEditor({
       notify("Demo only — connect Supabase to save.", true);
       return;
     }
-    start(async () => {
+    setSaving(true);
+    try {
       if (activeChannel === "blog") {
+        const metaToSave =
+          !metaEdited.current && isPlaceholderMeta(metaDescription)
+            ? deriveMetaDescription({
+                metaDescription: "",
+                myTake,
+                body,
+              })
+            : metaDescription;
+        if (metaToSave !== metaDescription) setMetaDescription(metaToSave);
+
         const result = await savePost({
           id: post.id,
           title,
@@ -375,12 +551,12 @@ export function PostEditor({
           my_take: myTake,
           body,
           body_language: lang,
-          status: post.status,
-          key_point: variants.zh.extra.key_point,
+          status,
+          key_point: keyPoint,
           social_title: variants.zh.extra.social_title,
           social_captions: { zh: variants.zh.content, en: variants.en.content },
           seo_title: seoTitle,
-          meta_description: metaDescription,
+          meta_description: metaToSave,
           category: category || null,
         });
         if (!result.ok) {
@@ -402,8 +578,74 @@ export function PostEditor({
         }
       }
       notify("Saved");
-      router.refresh();
+      safeRefresh();
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handlePublish() {
+    if (demoMode) {
+      notify("Demo only — connect Supabase to save.", true);
+      return;
+    }
+    const preflight = publishPreflightMessage({ title, body });
+    if (preflight) {
+      notify(preflight, true);
+      return;
+    }
+
+    const resolved = resolvePublishFields({
+      title,
+      slug,
+      seoTitle,
+      metaDescription,
+      myTake,
+      body,
+      postId: post.id,
+      status,
+      slugManuallyEdited: slugEdited.current,
     });
+    const blocked = publishValidationMessage({ ...resolved, postTitle: title });
+    if (blocked) {
+      notify(blocked, true);
+      return;
+    }
+
+    setPublishing(true);
+    setMessage(null);
+    try {
+      const result = await publishToSite({
+        id: post.id,
+        title,
+        slug: resolved.slug,
+        my_take: myTake,
+        body,
+        body_language: lang,
+        seo_title: resolved.seoTitle,
+        meta_description: resolved.metaDescription,
+        category: category || null,
+        key_point: keyPoint,
+        social_title: variants.zh.extra.social_title,
+        social_captions: { zh: variants.zh.content, en: variants.en.content },
+        status,
+        slug_manually_edited: slugEdited.current,
+      });
+      if (!result.ok) {
+        notify(result.error, true);
+        return;
+      }
+      setStatus("published");
+      setSlug(result.slug ?? resolved.slug);
+      if (resolved.seoTitle !== seoTitle) setSeoTitle(resolved.seoTitle);
+      if (resolved.metaDescription !== metaDescription) setMetaDescription(resolved.metaDescription);
+      const url = `${window.location.origin}/p/${result.slug}`;
+      notify(`Published. ${url}`);
+    } catch (e) {
+      notify(e instanceof Error ? e.message : "Publish failed.", true);
+    } finally {
+      setPublishing(false);
+    }
   }
 
   function copyText(text: string) {
@@ -467,30 +709,48 @@ export function PostEditor({
             </div>
           </div>
           <span
-            className={`studio-status ${post.status === "published" ? "studio-status-published" : ""}`}
+            className={`studio-status ${status === "published" ? "studio-status-published" : ""}`}
           >
-            {post.status === "published" ? "Published" : "Draft"}
+            {status === "published" ? "Published" : "Draft"}
           </span>
         </div>
         <div className="studio-editor-topbar-actions">
-          <Link
-            href={demoMode ? "/demo/post" : `/p/${slug}`}
-            className="studio-btn studio-btn-ghost hidden sm:inline-flex"
-          >
-            Preview
-          </Link>
+          {demoMode ? (
+            <Link href="/demo/post" className="studio-btn studio-btn-ghost hidden sm:inline-flex">
+              Preview
+            </Link>
+          ) : status === "published" ? (
+            <Link
+              href={`/p/${slug}`}
+              className="studio-btn studio-btn-ghost hidden sm:inline-flex"
+              target="_blank"
+              rel="noreferrer"
+            >
+              Preview
+            </Link>
+          ) : (
+            <Link
+              href={`/preview/post/${post.id}`}
+              className="studio-btn studio-btn-ghost hidden sm:inline-flex"
+              target="_blank"
+              rel="noreferrer"
+              title="Draft preview (admin only — not on the public blog yet)"
+            >
+              Preview
+            </Link>
+          )}
           <button
             type="button"
-            disabled={pending}
+            disabled={actionLocked}
             className="studio-btn studio-btn-ghost hidden xs:inline-flex"
-            onClick={handleSave}
+            onClick={() => void handleSave()}
           >
-            Save
+            {saving ? "Saving…" : "Save"}
           </button>
           <button
             type="button"
             className="studio-btn studio-btn-danger sm:hidden"
-            disabled={pending || deleting || demoMode}
+            disabled={actionLocked || deleting || demoMode}
             onClick={() => void handleDeletePost()}
           >
             {deleting ? "Deleting…" : "Delete"}
@@ -498,30 +758,10 @@ export function PostEditor({
           <button
             type="button"
             className="studio-btn studio-btn-primary"
-            disabled={pending || deleting}
-            onClick={() =>
-              run(async () => {
-                const result = await publishToSite({
-                  id: post.id,
-                  title,
-                  slug,
-                  my_take: myTake,
-                  body,
-                  body_language: lang,
-                  seo_title: seoTitle,
-                  meta_description: metaDescription,
-                  category: category || null,
-                });
-                if (!result.ok) {
-                  notify(result.error, true);
-                  return;
-                }
-                const url = `${window.location.origin}/p/${result.slug}`;
-                notify(`Published. ${url}`);
-              })
-            }
+            disabled={actionLocked || deleting}
+            onClick={() => void handlePublish()}
           >
-            Publish
+            {publishing ? "Publishing…" : "Publish"}
           </button>
         </div>
       </header>
@@ -633,7 +873,22 @@ export function PostEditor({
           <input
             className="studio-title-input"
             value={title}
-            onChange={(e) => setTitle(e.target.value)}
+            onChange={(e) => {
+              const next = e.target.value;
+              setSeoTitle((seo) => {
+                if (!seoEdited.current && (isPlaceholderSeoTitle(seo) || seo === title)) {
+                  return next.trim() || seo;
+                }
+                return seo;
+              });
+              setSlug((prev) => {
+                if (!slugEdited.current && isPlaceholderSlug(prev)) {
+                  return proposeSlugFromTitle(next, post.id, seoTitle);
+                }
+                return prev;
+              });
+              setTitle(next);
+            }}
             readOnly={demoMode}
           />
           <div className="studio-lang-bar">
@@ -743,16 +998,16 @@ export function PostEditor({
                 charCount={xChars}
                 onCopy={() => copyText(variants.x.content)}
                 showGenerate={showGenerateEmpty}
-                onGenerate={() =>
-                  run(() => generateVariantFromBlogAction(post.id, "x", generationPrefs))
-                }
+                onGenerate={() => void runGenerateFromBlog("x")}
                 channel="x"
                 generationPrefs={generationPrefs}
                 onPrefsChange={persistGenerationPrefs}
                 onQuickAdjust={runQuickAdjust}
                 suggestions={tabSuggestions}
                 demoMode={demoMode}
-                run={run}
+                onAccept={(id) => run(() => acceptSuggestion(id))}
+                onEdit={(id, text) => run(() => acceptSuggestion(id, text))}
+                onDismiss={(id) => run(() => dismissSuggestion(id))}
               />
             )}
 
@@ -765,16 +1020,16 @@ export function PostEditor({
                 charCount={threadsChars}
                 onCopy={() => copyText(variants.threads.content)}
                 showGenerate={showGenerateEmpty}
-                onGenerate={() =>
-                  run(() => generateVariantFromBlogAction(post.id, "threads", generationPrefs))
-                }
+                onGenerate={() => void runGenerateFromBlog("threads")}
                 channel="threads"
                 generationPrefs={generationPrefs}
                 onPrefsChange={persistGenerationPrefs}
                 onQuickAdjust={runQuickAdjust}
                 suggestions={tabSuggestions}
                 demoMode={demoMode}
-                run={run}
+                onAccept={(id) => run(() => acceptSuggestion(id))}
+                onEdit={(id, text) => run(() => acceptSuggestion(id, text))}
+                onDismiss={(id) => run(() => dismissSuggestion(id))}
               />
             )}
 
@@ -783,14 +1038,27 @@ export function PostEditor({
                 {showGenerateEmpty ? (
                   <div className="studio-generate-empty">
                     <p>No {contentLocale === "zh-HK" ? "中文" : "English"} caption yet.</p>
+                    <p className="text-xs text-[var(--karrot-muted)]">
+                      Image preview uses the post title and key point — caption not required.
+                    </p>
+                    <label className="studio-field mt-3">
+                      Key point (Roboto)
+                      <input
+                        value={keyPoint}
+                        onChange={(e) => setKeyPoint(e.target.value)}
+                      />
+                    </label>
+                    <div className="my-3 overflow-hidden rounded-lg border border-[var(--karrot-border)]">
+                      <img
+                        src={igAspect === "square" ? squareOg : portraitOg}
+                        alt="Social image preview"
+                        className="w-full"
+                      />
+                    </div>
                     <button
                       type="button"
                       className="studio-btn studio-btn-primary"
-                      onClick={() =>
-                        run(() =>
-                          generateVariantFromBlogAction(post.id, igStorage, generationPrefs),
-                        )
-                      }
+                      onClick={() => void runGenerateFromBlog(igStorage)}
                     >
                       Generate from blog
                     </button>
@@ -809,10 +1077,8 @@ export function PostEditor({
                     <label className="studio-field">
                       Key point (Roboto)
                       <input
-                        value={variants[igStorage].extra.key_point ?? ""}
-                        onChange={(e) =>
-                          updateVariant(igStorage, { extra: { key_point: e.target.value } })
-                        }
+                        value={keyPoint}
+                        onChange={(e) => setKeyPoint(e.target.value)}
                       />
                     </label>
                     <label className="mb-1 mt-3 block text-xs font-semibold text-[var(--karrot-muted)]">
@@ -845,11 +1111,7 @@ export function PostEditor({
                     <button
                       type="button"
                       className="studio-btn studio-btn-primary h-8 text-xs"
-                      onClick={() =>
-                        run(() =>
-                          generateVariantFromBlogAction(post.id, igStorage, generationPrefs),
-                        )
-                      }
+                      onClick={() => void runGenerateFromBlog(igStorage)}
                     >
                       Regenerate from blog
                     </button>
@@ -882,6 +1144,8 @@ export function PostEditor({
           }}
           category={category}
           setCategory={setCategory}
+          keyPoint={keyPoint}
+          setKeyPoint={setKeyPoint}
           onFillSeo={() => void fillSeoFromBody(stripSourcesForEditor(body))}
           seoFilling={seoFilling}
           publishMode={publishMode}
@@ -912,7 +1176,7 @@ export function PostEditor({
             a.click();
           }}
           demoMode={demoMode}
-          pending={pending}
+          pending={actionLocked}
           onDraftFromSources={() =>
             run(() => draftPostWithAi(post.id, draftChannel(), generationPrefs))
           }
@@ -943,7 +1207,9 @@ function VariantChannelEditor({
   onQuickAdjust,
   suggestions,
   demoMode,
-  run,
+  onAccept,
+  onEdit,
+  onDismiss,
 }: {
   label: string;
   content: string;
@@ -959,8 +1225,20 @@ function VariantChannelEditor({
   onQuickAdjust: (a: "shorter" | "longer" | "more_detail") => void;
   suggestions: EditorSuggestion[];
   demoMode: boolean;
-  run: (fn: () => Promise<void>) => void;
+  onAccept: (id: string) => void;
+  onEdit: (id: string, text: string) => void;
+  onDismiss: (id: string) => void;
 }) {
+  const suggestionsBlock = (
+    <VariantSuggestions
+      suggestions={suggestions}
+      demoMode={demoMode}
+      onAccept={onAccept}
+      onEdit={onEdit}
+      onDismiss={onDismiss}
+    />
+  );
+
   if (showGenerate) {
     return (
       <div className="studio-generate-empty">
@@ -974,6 +1252,7 @@ function VariantChannelEditor({
         <button type="button" className="studio-btn studio-btn-primary mt-3" onClick={onGenerate}>
           Generate from blog
         </button>
+        {suggestionsBlock}
       </div>
     );
   }
@@ -994,28 +1273,7 @@ function VariantChannelEditor({
       <button type="button" className="mt-2 text-xs font-semibold text-[var(--karrot-accent)]" onClick={onCopy}>
         Copy
       </button>
-      <VariantSuggestions
-        suggestions={suggestions}
-        demoMode={demoMode}
-        onAccept={(id) =>
-          run(async () => {
-            const result = await resolveSuggestion(id, "accept");
-            if (!result.ok) throw new Error(result.error);
-          })
-        }
-        onEdit={(id, text) =>
-          run(async () => {
-            const result = await resolveSuggestion(id, "accept", text);
-            if (!result.ok) throw new Error(result.error);
-          })
-        }
-        onDismiss={(id) =>
-          run(async () => {
-            const result = await resolveSuggestion(id, "dismiss");
-            if (!result.ok) throw new Error(result.error);
-          })
-        }
-      />
+      {suggestionsBlock}
       <div className="mt-4 flex flex-col gap-3">
         <GenerationControls
           channel={channel}
@@ -1062,7 +1320,7 @@ function CommentsSection({
           >
             <p>{c.body}</p>
             <div className="mt-1 flex justify-between text-[11px] text-[var(--karrot-muted)]">
-              <span>{new Date(c.created_at).toLocaleString()}</span>
+              <span>{formatStudioDateTimeUtc(c.created_at)}</span>
               {!c.resolved && (
                 <button
                   type="button"

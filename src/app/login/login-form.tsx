@@ -42,6 +42,11 @@ export function LoginForm() {
         return;
       }
 
+      if (!data.session?.user) {
+        setFormError("Email or password is incorrect.");
+        return;
+      }
+
       if (!isAdminSession(data.user, getAdminEmail())) {
         await supabase.auth.signOut();
         setFormError("This account isn't allowed to use Content Studio.");
@@ -99,12 +104,6 @@ export function LoginForm() {
             : "Sign-in failed. Please try again."}
         </p>
       )}
-      {formError && (
-        <p className="mt-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
-          {formError}
-        </p>
-      )}
-
       <form className="login-form mt-8" onSubmit={signInWithPassword}>
         <label className="login-field">
           <span>Email</span>
@@ -128,6 +127,11 @@ export function LoginForm() {
             required
           />
         </label>
+        {formError && (
+          <p className="login-form-error" role="alert">
+            {formError}
+          </p>
+        )}
         <button
           type="submit"
           disabled={loading}

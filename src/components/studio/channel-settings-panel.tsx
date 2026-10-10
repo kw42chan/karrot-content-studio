@@ -5,6 +5,7 @@ import type { ContentLocale, DistributionChannel } from "@/lib/studio/channels";
 import type { EditorPost, EditorVersion } from "@/components/studio/post-editor";
 import { POST_CATEGORIES, categoryLabel, type PostCategory } from "@/lib/blog/categories";
 import type { ChannelGenerationPrefs } from "@/lib/studio/generation-prefs";
+import { formatStudioDateTimeUtc } from "@/lib/format/timestamp";
 
 export function ChannelSettingsPanel({
   channel,
@@ -18,6 +19,8 @@ export function ChannelSettingsPanel({
   setMetaDescription,
   category,
   setCategory,
+  keyPoint = "",
+  setKeyPoint,
   onFillSeo,
   seoFilling = false,
   publishMode,
@@ -55,6 +58,8 @@ export function ChannelSettingsPanel({
   setMetaDescription: (v: string) => void;
   category: PostCategory | "";
   setCategory: (v: PostCategory | "") => void;
+  keyPoint?: string;
+  setKeyPoint?: (v: string) => void;
   onFillSeo?: () => void;
   seoFilling?: boolean;
   publishMode: "web_only" | "web_and_email";
@@ -131,6 +136,17 @@ export function ChannelSettingsPanel({
                 ))}
               </select>
             </div>
+            {setKeyPoint && (
+              <div className="studio-field">
+                <label>Key point</label>
+                <input
+                  value={keyPoint}
+                  onChange={(e) => setKeyPoint(e.target.value)}
+                  readOnly={demoMode}
+                  placeholder="Short line for /p featured block and social image"
+                />
+              </div>
+            )}
             <p className="text-xs leading-snug text-[var(--karrot-muted)]">
               Post cards on <strong>/p</strong> use taupe covers with title words. Custom cover image upload is not
               available in the studio yet.
@@ -282,7 +298,7 @@ export function ChannelSettingsPanel({
             <ul className="space-y-2 text-xs">
               {versions.slice(0, 5).map((v) => (
                 <li key={v.id} className="flex justify-between gap-2">
-                  <span className="truncate">{new Date(v.created_at).toLocaleString()}</span>
+                  <span className="truncate">{formatStudioDateTimeUtc(v.created_at)}</span>
                   <button
                     type="button"
                     className="font-semibold text-[var(--karrot-accent)]"

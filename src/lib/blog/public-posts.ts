@@ -23,8 +23,21 @@ export function looksLikeInternalTitle(text: string): boolean {
   if (/^untitled draft$/i.test(t)) return true;
   if (/^draft[-\s]/i.test(t)) return true;
   if (/fdraft/i.test(t)) return true;
+  if (/^\d{10,}$/.test(t)) return true;
   if (TEST_TITLE_OR_SLUG.test(t)) return true;
   return false;
+}
+
+/** Title shown in the studio posts list (never raw timestamp ids). */
+export function studioListTitle(post: {
+  title: string;
+  slug: string;
+  seo_title?: string | null;
+}): string {
+  const display = publicDisplayTitle(post);
+  if (display === "Post" && looksLikeInternalTitle(post.title)) return "Untitled draft";
+  if (looksLikeInternalTitle(post.title) && looksLikeInternalTitle(display)) return "Untitled draft";
+  return display;
 }
 
 export function isTestOrInternalPost(post: {
@@ -75,12 +88,7 @@ export function filterPublicPosts(posts: PublicBlogPost[]): PublicBlogPost[] {
 export function pickFeaturedPost(posts: PublicBlogPost[]): PublicBlogPost | null {
   const visible = filterPublicPosts(posts);
   if (!visible.length) return null;
-  const sorted = sortNewest(visible);
-  const withGuide = sorted.filter(hasKeyPoints);
-  if (withGuide.length) return withGuide[0];
-  const withCategory = sorted.filter((p) => p.category);
-  if (withCategory.length) return withCategory[0];
-  return sorted[0];
+  return sortNewest(visible)[0];
 }
 
 /** True when cover_url is safe to attempt as a public card background (http/https only). */
@@ -96,16 +104,62 @@ export function isUsableCoverUrl(url: string | null | undefined): boolean {
   }
 }
 
+const COVER_WORD_MAX = 8;
+const CJK_COVER_MAX = 10;
+
+const CJK_RUN = /[\u4e00-\u9fff\u3400-\u4dbf\uf900-\ufaff]/;
+
+function fitCoverWords(display: string, maxLen: number): string {
+  const words = display.split(/\s+/).filter(Boolean);
+  if (!words.length) return "Post";
+  let out = words[0];
+  for (let i = 1; i < words.length; i++) {
+    const next = `${out} ${words[i]}`;
+    if (next.length <= maxLen) out = next;
+    else break;
+  }
+  if (out.length <= maxLen) return out;
+  if (words[0].length <= maxLen) return words[0];
+  return words[0];
+}
+
+function leadingCjkRun(display: string): string | null {
+  const trimmed = display.trim();
+  let run = "";
+  for (const ch of trimmed) {
+    if (CJK_RUN.test(ch)) run += ch;
+    else break;
+  }
+  return run.length >= 2 ? run : null;
+}
+
+function firstCjkRun(display: string): string | null {
+  const m = display.match(/[\u4e00-\u9fff\u3400-\u4dbf\uf900-\ufaff]+/);
+  return m && m[0].length >= 2 ? m[0] : null;
+}
+
+function leadingLatinWord(display: string): string | null {
+  const m = display.trim().match(/^([A-Za-z][A-Za-z0-9]*)/);
+  return m ? m[1] : null;
+}
+
 export function coverWordForPost(post: PublicBlogPost): string {
   const display = publicDisplayTitle(post);
   if (/harness/i.test(display) && /engineering/i.test(display)) {
     return "Harness\nEngineering";
   }
-  if (post.body_language === "zh-HK") {
-    const compact = display.replace(/\s/g, "");
-    if (compact.length >= 4) return compact.slice(0, 6);
-    return "帳號安全";
+
+  const cjk =
+    leadingCjkRun(display) ??
+    (post.body_language === "zh-HK" ? firstCjkRun(display) : null);
+  if (cjk) {
+    return cjk.length <= CJK_COVER_MAX ? cjk : cjk.slice(0, CJK_COVER_MAX);
   }
-  const words = display.split(/\s+/).filter(Boolean);
-  return words.slice(0, 2).join(" ") || "Post";
+
+  const latin = leadingLatinWord(display);
+  if (latin && latin.length >= 4) {
+    return latin.length <= COVER_WORD_MAX ? latin : latin.slice(0, COVER_WORD_MAX);
+  }
+
+  return fitCoverWords(display, COVER_WORD_MAX);
 }

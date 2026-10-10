@@ -6,6 +6,7 @@ import {
   isUsableCoverUrl,
   pickFeaturedPost,
   publicDisplayTitle,
+  studioListTitle,
 } from "./public-posts";
 import type { PublicBlogPost } from "./types";
 
@@ -32,6 +33,18 @@ describe("isTestOrInternalPost", () => {
   });
 });
 
+describe("studioListTitle", () => {
+  it("shows Untitled draft for timestamp internal titles", () => {
+    expect(
+      studioListTitle({
+        title: "1791607702533",
+        slug: "draft-1791607702533",
+        seo_title: null,
+      }),
+    ).toBe("Untitled draft");
+  });
+});
+
 describe("publicDisplayTitle", () => {
   it("prefers seo_title over internal title", () => {
     expect(
@@ -45,7 +58,7 @@ describe("publicDisplayTitle", () => {
 });
 
 describe("pickFeaturedPost", () => {
-  it("prefers newest post with key_points over newer test post", () => {
+  it("uses the newest visible published post for Latest post", () => {
     const guide = post({
       id: "1",
       title: "Claude guide",
@@ -53,14 +66,16 @@ describe("pickFeaturedPost", () => {
       key_points: [{ title: "One" }],
       published_at: "2026-10-07T00:00:00Z",
       category: "account-security",
+      seo_title: "Claude guide",
     });
-    const test = post({
+    const newer = post({
       id: "2",
-      title: "Retest 3-5 persistence",
-      slug: "retest",
+      title: "Newer article",
+      slug: "newer-article",
       published_at: "2026-10-08T00:00:00Z",
+      seo_title: "Newer article",
     });
-    expect(pickFeaturedPost([test, guide])?.slug).toBe("claude-guide");
+    expect(pickFeaturedPost([guide, newer])?.slug).toBe("newer-article");
   });
 });
 
@@ -86,6 +101,74 @@ describe("isUsableCoverUrl", () => {
 });
 
 describe("coverWordForPost", () => {
+  it("uses whole words for English titles without mid-word chop", () => {
+    const word = coverWordForPost(
+      post({
+        id: "1",
+        title: "QA r4 test",
+        slug: "qa-r4-test",
+        seo_title: "QA r4 test",
+        body_language: "en",
+      }),
+    );
+    expect(word).toBe("QA r4");
+  });
+
+  it("prefers leading CJK for mixed titles", () => {
+    expect(
+      coverWordForPost(
+        post({
+          id: "1",
+          title: "中國護照註冊Claude",
+          slug: "china-passport",
+          seo_title: "中國護照註冊Claude",
+          body_language: "zh-HK",
+        }),
+      ),
+    ).toBe("中國護照註冊");
+  });
+
+  it("uses CJK segment when Latin leads on zh posts", () => {
+    expect(
+      coverWordForPost(
+        post({
+          id: "1",
+          title: "Claude帳號安全",
+          slug: "claude-safety",
+          seo_title: "Claude帳號安全",
+          body_language: "zh-HK",
+        }),
+      ),
+    ).toBe("帳號安全");
+  });
+
+  it("keeps spaced Latin words without mid-word chop", () => {
+    expect(
+      coverWordForPost(
+        post({
+          id: "1",
+          title: "QA r6 test A",
+          slug: "qa-r6",
+          seo_title: "QA r6 test A",
+          body_language: "en",
+        }),
+      ),
+    ).toBe("QA r6");
+  });
+
+  it("keeps full short CJK title on cover when it fits", () => {
+    const word = coverWordForPost(
+      post({
+        id: "1",
+        title: "測試文章第五輪",
+        slug: "test-round-5",
+        seo_title: "測試文章第五輪",
+        body_language: "zh-HK",
+      }),
+    );
+    expect(word).toBe("測試文章第五輪");
+  });
+
   it("does not use fdraft internal title for zh cover", () => {
     const word = coverWordForPost(
       post({
@@ -97,6 +180,6 @@ describe("coverWordForPost", () => {
       }),
     );
     expect(word).not.toBe("fdraft");
-    expect(word).toContain("Claude");
+    expect(word).toContain("帳號");
   });
 });

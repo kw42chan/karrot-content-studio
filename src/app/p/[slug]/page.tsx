@@ -70,17 +70,21 @@ export default async function PublicBlogPostPage({
   const all = await loadPublishedPosts();
   const related = buildMoreInCategory(all, post);
   const { prev, next } = adjacentPosts(all, slug);
-  const catLabel = post.category ? categoryLabel(post.category) : "Posts";
+  const catLabel = post.category ? categoryLabel(post.category) : null;
 
   return (
     <>
       <nav className="crumbs" aria-label="Breadcrumb" lang="en">
-        <Link href="/p">Posts</Link>
-        <span className="sep">/</span>
-        {post.category ? (
-          <Link className="current" href={`/p?category=${post.category}`}>{catLabel}</Link>
-        ) : (
-          <span className="current">{catLabel}</span>
+        <Link href="/p" className={catLabel ? undefined : "current"}>
+          Posts
+        </Link>
+        {catLabel && (
+          <>
+            <span className="sep">/</span>
+            <Link className="current" href={`/p?category=${post.category}`}>
+              {catLabel}
+            </Link>
+          </>
         )}
       </nav>
 
@@ -97,7 +101,7 @@ export default async function PublicBlogPostPage({
             <div>
               <div className="eyebrow">Keep reading</div>
               <h2 className="h-anton" id="relTitle">
-                More in {catLabel}
+                {catLabel ? `More in ${catLabel}` : "More posts"}
               </h2>
             </div>
           </div>

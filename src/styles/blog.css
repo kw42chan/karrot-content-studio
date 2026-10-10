@@ -194,6 +194,11 @@ img{display:block}
   .share i{font-style:normal;width:34px;height:34px;border-radius:999px;border:1px solid var(--border-strong);display:grid;place-items:center;font-size:13px;color:var(--text);background:var(--cream)}
   @media (max-width:640px){.post-title{font-size:32px}.post-dek{font-size:17px}.share span{display:none}}
 
+  .post-my-take{background:var(--card);border-radius:var(--radius-card);padding:22px 24px;margin-top:28px}
+  .post-my-take .eyebrow{margin-bottom:12px}
+  .post-my-take-body{font:400 18px/1.7 var(--font-body);color:var(--text);margin:0;white-space:pre-wrap}
+  @media (max-width:640px){.post-my-take-body{font-size:17px}}
+
   .prose{margin-top:36px}
   .prose p{font:400 18px/1.75 var(--font-body);margin-bottom:26px;letter-spacing:.01em}
   @media (max-width:640px){.prose p{font-size:17px}}

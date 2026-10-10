@@ -1,7 +1,7 @@
 "use client";
 
 import { createClient } from "@/lib/supabase/client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 export function ChangePasswordForm({ email }: { email: string }) {
   const [open, setOpen] = useState(false);
@@ -11,6 +11,23 @@ export function ChangePasswordForm({ email }: { email: string }) {
   const [message, setMessage] = useState<string | null>(null);
   const [isError, setIsError] = useState(false);
   const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    if (!open) return;
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape" && !busy) closeDialog();
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open, busy]);
+
+  function closeDialog() {
+    setOpen(false);
+    setMessage(null);
+    setCurrent("");
+    setNewPassword("");
+    setConfirm("");
+  }
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -56,72 +73,87 @@ export function ChangePasswordForm({ email }: { email: string }) {
     }
   }
 
-  if (!open) {
-    return (
+  return (
+    <>
       <button type="button" className="studio-signout" onClick={() => setOpen(true)}>
         Change password
       </button>
-    );
-  }
 
-  return (
-    <form className="studio-change-password" onSubmit={onSubmit}>
-      <p className="studio-change-password-title">Change password</p>
-      <label className="studio-change-password-field">
-        <span>Current</span>
-        <input
-          type="password"
-          autoComplete="current-password"
-          value={current}
-          onChange={(e) => setCurrent(e.target.value)}
-          required
-        />
-      </label>
-      <label className="studio-change-password-field">
-        <span>New</span>
-        <input
-          type="password"
-          autoComplete="new-password"
-          value={newPassword}
-          onChange={(e) => setNewPassword(e.target.value)}
-          required
-          minLength={8}
-        />
-      </label>
-      <label className="studio-change-password-field">
-        <span>Confirm</span>
-        <input
-          type="password"
-          autoComplete="new-password"
-          value={confirm}
-          onChange={(e) => setConfirm(e.target.value)}
-          required
-          minLength={8}
-        />
-      </label>
-      {message && (
-        <p className={isError ? "studio-change-password-error" : "studio-change-password-ok"}>
-          {message}
-        </p>
+      {open && (
+        <>
+          <div
+            className="studio-change-password-backdrop"
+            aria-hidden
+            onClick={() => !busy && closeDialog()}
+          />
+          <div
+            className="studio-change-password-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="change-password-title"
+          >
+            <form className="studio-change-password-panel" onSubmit={onSubmit}>
+              <p className="studio-change-password-title" id="change-password-title">
+                Change password
+              </p>
+              <label className="studio-change-password-field">
+                <span>Current password</span>
+                <input
+                  type="password"
+                  autoComplete="current-password"
+                  value={current}
+                  onChange={(e) => setCurrent(e.target.value)}
+                  required
+                />
+              </label>
+              <label className="studio-change-password-field">
+                <span>New password</span>
+                <input
+                  type="password"
+                  autoComplete="new-password"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  required
+                  minLength={8}
+                />
+              </label>
+              <label className="studio-change-password-field">
+                <span>Confirm new password</span>
+                <input
+                  type="password"
+                  autoComplete="new-password"
+                  value={confirm}
+                  onChange={(e) => setConfirm(e.target.value)}
+                  required
+                  minLength={8}
+                />
+              </label>
+              {message && (
+                <p className={isError ? "studio-change-password-error" : "studio-change-password-ok"}>
+                  {message}
+                </p>
+              )}
+              <div className="studio-change-password-actions">
+                <button
+                  type="submit"
+                  className="studio-btn studio-btn-primary h-9 text-sm"
+                  disabled={busy}
+                >
+                  {busy ? "Saving…" : "Update password"}
+                </button>
+                <button
+                  type="button"
+                  className="studio-btn studio-btn-ghost h-9 text-sm"
+                  disabled={busy}
+                  onClick={closeDialog}
+                >
+                  Cancel
+                </button>
+              </div>
+            </form>
+          </div>
+        </>
       )}
-      <div className="studio-change-password-actions">
-        <button type="submit" className="studio-btn studio-btn-primary h-8 text-xs" disabled={busy}>
-          {busy ? "Saving…" : "Update password"}
-        </button>
-        <button
-          type="button"
-          className="studio-btn studio-btn-ghost h-8 text-xs"
-          onClick={() => {
-            setOpen(false);
-            setMessage(null);
-            setCurrent("");
-            setNewPassword("");
-            setConfirm("");
-          }}
-        >
-          Cancel
-        </button>
-      </div>
-    </form>
+    </>
   );
 }
