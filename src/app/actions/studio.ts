@@ -30,6 +30,7 @@ import { generateSeoFields } from "@/lib/ai/seo";
 import { computeReadTimeMinutes } from "@/lib/blog/read-time";
 import { stripSourcesSection } from "@/lib/blog/format";
 import type { PostCategory } from "@/lib/blog/categories";
+import { publicPostPath } from "@/lib/posts/site-publish";
 import { publishBlockReason, seoSlug, withSlugSuffix } from "@/lib/posts/seo-slug";
 import { slugify } from "@/lib/posts/slugify";
 import { readSourceFromUrl } from "@/lib/sources/read-source";
@@ -216,7 +217,7 @@ export async function deletePost(postId: string): Promise<DeletePostResult> {
     revalidatePath("/p");
     revalidatePath("/posts");
     if (post.slug) {
-      revalidatePath(`/p/${post.slug}`);
+      revalidatePath(publicPostPath(post.slug as string));
       revalidatePath(`/posts/${post.slug}`);
     }
     return { ok: true };
@@ -297,7 +298,7 @@ export async function publishToSite(input: {
   });
   if (!saved.ok) return saved;
   revalidatePath("/p");
-  revalidatePath(`/p/${input.slug}`);
+  revalidatePath(publicPostPath(input.slug));
   return { ok: true, slug: input.slug };
 }
 
@@ -389,7 +390,7 @@ export async function savePost(input: {
     revalidatePath(`/studio/posts/${input.id}`);
     revalidatePath("/posts");
     revalidatePath("/p");
-    if (input.slug) revalidatePath(`/p/${input.slug}`);
+    if (input.slug) revalidatePath(publicPostPath(input.slug));
     return { ok: true };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Save failed" };
@@ -913,13 +914,17 @@ export async function publishPostToKit(
     sources,
   });
 
-  const { broadcastId } = await publishToKit({
+  const kitResult = await publishToKit({
     subject: post.title,
     contentHtml: html,
     broadcastId: post.kit_broadcast_id,
     mode,
     confirmEmail,
   });
+  if (!kitResult.ok) {
+    throw new Error(kitResult.error);
+  }
+  const { broadcastId } = kitResult;
 
   await supabase
     .from("studio_posts")
