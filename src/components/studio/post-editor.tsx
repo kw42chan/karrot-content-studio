@@ -50,7 +50,7 @@ import {
   publishValidationMessage,
   resolvePublishFields,
 } from "@/lib/posts/publish-prep";
-import { formatStudioDateTimeUtc } from "@/lib/format/timestamp";
+import { formatStudioDateTimeHkt } from "@/lib/format/timestamp";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
@@ -213,7 +213,7 @@ export function PostEditor({
   const [publishMode, setPublishMode] = useState<"web_only" | "web_and_email">("web_only");
   const [confirmEmail, setConfirmEmail] = useState(false);
   const [localSuggestions, setLocalSuggestions] = useState(suggestions);
-  const [ogTick, setOgTick] = useState(0);
+  const [ogTick, setOgTick] = useState(1);
   const [generationPrefs, setGenerationPrefs] = useState<ChannelGenerationPrefs>(() =>
     normalizeGenerationPrefs(post.generation_prefs),
   );
@@ -254,7 +254,6 @@ export function PostEditor({
       zh: { ...v.zh, extra: { ...v.zh.extra, key_point: value } },
       en: { ...v.en, extra: { ...v.en.extra, key_point: value } },
     }));
-    setOgTick((t) => t + 1);
   }
 
   useEffect(() => {
@@ -286,6 +285,16 @@ export function PostEditor({
   const socialKeyEnc = encodeURIComponent(ogKey);
   const squareOg = `/api/og/social?title=${socialTitleEnc}&keyPoint=${socialKeyEnc}&format=square&v=${ogTick}`;
   const portraitOg = `/api/og/social?title=${socialTitleEnc}&keyPoint=${socialKeyEnc}&format=portrait&v=${ogTick}`;
+
+  const ogPreviewInputs = useMemo(
+    () => `${ogTitle}\0${ogKey}\0${igAspect}`,
+    [ogTitle, ogKey, igAspect],
+  );
+
+  useEffect(() => {
+    if (activeChannel !== "instagram") return;
+    setOgTick((t) => t + 1);
+  }, [activeChannel, ogPreviewInputs]);
 
   const postsHref = demoMode ? "/demo/studio/posts" : "/studio";
 
@@ -1050,9 +1059,12 @@ export function PostEditor({
                     </label>
                     <div className="my-3 overflow-hidden rounded-lg border border-[var(--karrot-border)]">
                       <img
+                        key={igAspect === "square" ? squareOg : portraitOg}
                         src={igAspect === "square" ? squareOg : portraitOg}
                         alt="Social image preview"
                         className="w-full"
+                        loading="eager"
+                        decoding="async"
                       />
                     </div>
                     <button
@@ -1320,7 +1332,7 @@ function CommentsSection({
           >
             <p>{c.body}</p>
             <div className="mt-1 flex justify-between text-[11px] text-[var(--karrot-muted)]">
-              <span>{formatStudioDateTimeUtc(c.created_at)}</span>
+              <span>{formatStudioDateTimeHkt(c.created_at)}</span>
               {!c.resolved && (
                 <button
                   type="button"

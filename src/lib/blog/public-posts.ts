@@ -143,17 +143,48 @@ function leadingLatinWord(display: string): string | null {
   return m ? m[1] : null;
 }
 
+/** Latin-first mixed titles (e.g. Claude帳號…): keep leading Latin plus following CJK when it fits. */
+function latinFirstMixedCover(display: string): string | null {
+  const trimmed = display.trim();
+  const latin = leadingLatinWord(trimmed);
+  if (!latin || !trimmed.startsWith(latin)) return null;
+
+  let cjk = "";
+  for (const ch of trimmed.slice(latin.length)) {
+    if (CJK_RUN.test(ch)) cjk += ch;
+    else break;
+  }
+
+  let out = latin;
+  if (cjk.length >= 2) out = latin + cjk;
+
+  const maxLen = cjk.length >= 2 ? CJK_COVER_MAX : COVER_WORD_MAX;
+  if (out.length <= maxLen) return out;
+  if (cjk.length >= 2) {
+    const room = maxLen - latin.length;
+    return room > 0 ? latin + cjk.slice(0, room) : latin.slice(0, maxLen);
+  }
+  return latin.slice(0, maxLen);
+}
+
 export function coverWordForPost(post: PublicBlogPost): string {
   const display = publicDisplayTitle(post);
   if (/harness/i.test(display) && /engineering/i.test(display)) {
     return "Harness\nEngineering";
   }
 
-  const cjk =
-    leadingCjkRun(display) ??
-    (post.body_language === "zh-HK" ? firstCjkRun(display) : null);
-  if (cjk) {
-    return cjk.length <= CJK_COVER_MAX ? cjk : cjk.slice(0, CJK_COVER_MAX);
+  const cjkLead = leadingCjkRun(display);
+  if (cjkLead) {
+    return cjkLead.length <= CJK_COVER_MAX ? cjkLead : cjkLead.slice(0, CJK_COVER_MAX);
+  }
+
+  if (post.body_language === "zh-HK") {
+    const mixed = latinFirstMixedCover(display);
+    if (mixed) return mixed;
+    const seg = firstCjkRun(display);
+    if (seg) {
+      return seg.length <= CJK_COVER_MAX ? seg : seg.slice(0, CJK_COVER_MAX);
+    }
   }
 
   const latin = leadingLatinWord(display);
