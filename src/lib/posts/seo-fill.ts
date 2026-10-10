@@ -27,6 +27,15 @@ export function seoFillTargets(snapshot: SeoFillSnapshot): SeoFillTargets {
   };
 }
 
+/** User clicked Fill SEO — always regenerate SEO title and meta; slug optional (e.g. published + cancel). */
+export function regenerateSeoFillTargets(updateSlug: boolean): SeoFillTargets {
+  return {
+    slug: updateSlug,
+    seoTitle: true,
+    metaDescription: true,
+  };
+}
+
 export type PreparedSeoFill = {
   slug: string;
   seoTitle: string;
@@ -64,6 +73,7 @@ export function mergeSeoFillFromAi(
   targets: SeoFillTargets,
   ai: { seoTitle: string; metaDescription: string; slug: string },
   derivedMeta: string,
+  options?: { preferAiMeta?: boolean },
 ): PreparedSeoFill {
   let slug = snapshot.slug;
   let seoTitle = snapshot.seoTitle;
@@ -73,9 +83,13 @@ export function mergeSeoFillFromAi(
     seoTitle = ai.seoTitle.trim();
   }
   if (targets.metaDescription) {
-    const fromBody = derivedMeta.trim();
-    metaDescription =
-      fromBody && !isPlaceholderMeta(fromBody) ? fromBody : ai.metaDescription.trim();
+    if (options?.preferAiMeta) {
+      metaDescription = ai.metaDescription.trim();
+    } else {
+      const fromBody = derivedMeta.trim();
+      metaDescription =
+        fromBody && !isPlaceholderMeta(fromBody) ? fromBody : ai.metaDescription.trim();
+    }
   }
   if (targets.slug) {
     const derived = deriveSlugWhenModelOmits(seoTitle, "", ai.slug, ai.slug);

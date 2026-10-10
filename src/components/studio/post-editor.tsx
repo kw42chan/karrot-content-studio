@@ -45,12 +45,10 @@ import {
 } from "@/lib/posts/seo-slug";
 import {
   deriveMetaDescription,
-  proposeSlugFromTitle,
   publishPreflightMessage,
   publishValidationMessage,
   resolvePublishFields,
 } from "@/lib/posts/publish-prep";
-import { seoFillTargets } from "@/lib/posts/seo-fill";
 import { formatStudioDateTimeHkt } from "@/lib/format/timestamp";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -191,7 +189,7 @@ export function PostEditor({
   const [title, setTitle] = useState(post.title);
   const [status, setStatus] = useState(post.status);
   const [slug, setSlug] = useState(post.slug);
-  const [seoTitle, setSeoTitle] = useState(post.seo_title ?? post.title);
+  const [seoTitle, setSeoTitle] = useState(post.seo_title ?? "");
   const [metaDescription, setMetaDescription] = useState(post.meta_description ?? "");
   const [category, setCategory] = useState<PostCategory | "">(post.category ?? "");
   const slugEdited = useRef(false);
@@ -304,15 +302,6 @@ export function PostEditor({
     setMessageIsError(isError);
   }
 
-  function seoFillNeeds() {
-    return seoFillTargets({
-      slug,
-      seoTitle,
-      metaDescription,
-      slugManuallyEdited: slugEdited.current,
-    });
-  }
-
   function appendLocalSuggestion(s: EditorSuggestion) {
     setLocalSuggestions((list) => {
       if (list.some((x) => x.id === s.id)) return list;
@@ -321,15 +310,16 @@ export function PostEditor({
   }
 
   async function fillSeoFromBody(bodyText: string, quiet = false) {
-    const fill = seoFillNeeds();
-    if (!fill.slug && !fill.seoTitle && !fill.metaDescription) {
-      if (!quiet) notify("Slug, SEO title, and meta description are already set.");
-      return;
-    }
     if (!bodyText.trim()) {
-      if (!quiet) notify("Add a draft body first.", true);
+      notify("Add post body before Fill SEO can run.", true);
       return;
     }
+
+    let updateSlug = true;
+    if (status === "published") {
+      updateSlug = window.confirm("This changes the post's public link. Continue with a new URL slug?");
+    }
+
     setSeoFilling(true);
     try {
       const result = await fillPostSeo({
@@ -341,7 +331,8 @@ export function PostEditor({
         currentSlug: slug,
         currentSeoTitle: seoTitle,
         currentMetaDescription: metaDescription,
-        slugManuallyEdited: slugEdited.current,
+        regenerate: true,
+        updateSlug,
       });
       if (!result.ok) {
         notify(quiet ? `Added to the draft, but SEO failed: ${result.error}` : result.error, true);
@@ -359,8 +350,8 @@ export function PostEditor({
         setMetaDescription(result.metaDescription);
         metaEdited.current = false;
       }
-      notify(quiet ? "Added to the draft. SEO fields filled." : "SEO fields filled. You can still edit them.");
-      router.refresh();
+      notify(quiet ? "Added to the draft. Saved." : "Saved");
+      safeRefresh();
     } catch (e) {
       const msg = e instanceof Error ? e.message : "SEO fill failed.";
       notify(quiet ? `Added to the draft, but SEO failed: ${msg}` : msg, true);
@@ -884,22 +875,7 @@ export function PostEditor({
           <input
             className="studio-title-input"
             value={title}
-            onChange={(e) => {
-              const next = e.target.value;
-              setSeoTitle((seo) => {
-                if (!seoEdited.current && (isPlaceholderSeoTitle(seo) || seo === title)) {
-                  return next.trim() || seo;
-                }
-                return seo;
-              });
-              setSlug((prev) => {
-                if (!slugEdited.current && isPlaceholderSlug(prev)) {
-                  return proposeSlugFromTitle(next, post.id, seoTitle);
-                }
-                return prev;
-              });
-              setTitle(next);
-            }}
+            onChange={(e) => setTitle(e.target.value)}
             readOnly={demoMode}
           />
           <div className="studio-lang-bar">

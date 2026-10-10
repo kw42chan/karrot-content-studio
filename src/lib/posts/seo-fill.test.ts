@@ -3,11 +3,37 @@ import { isPlaceholderSlug } from "./seo-slug";
 import {
   deriveSlugWhenModelOmits,
   mergeSeoFillFromAi,
+  regenerateSeoFillTargets,
   seoFillTargets,
   validateSeoFill,
 } from "./seo-fill";
 
 describe("seo-fill", () => {
+  it("regenerate targets always refresh SEO title and meta; slug is optional", () => {
+    expect(regenerateSeoFillTargets(true)).toEqual({
+      slug: true,
+      seoTitle: true,
+      metaDescription: true,
+    });
+    expect(regenerateSeoFillTargets(false)).toEqual({
+      slug: false,
+      seoTitle: true,
+      metaDescription: true,
+    });
+  });
+
+  it("does not treat junk client slug as “already set” for placeholder-only heuristics", () => {
+    const targets = seoFillTargets({
+      slug: "ai-79f7b9",
+      seoTitle: "AI 代理放工後繼續工作",
+      metaDescription: "已有 meta",
+      slugManuallyEdited: false,
+    });
+    expect(targets.slug).toBe(false);
+    expect(targets.seoTitle).toBe(false);
+    expect(targets.metaDescription).toBe(false);
+  });
+
   it("treats null seo_title and draft slug as needing fill even when post title exists", () => {
     const targets = seoFillTargets({
       slug: "draft-1791617546123",

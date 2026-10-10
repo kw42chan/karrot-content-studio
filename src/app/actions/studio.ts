@@ -44,12 +44,12 @@ import {
   deriveMetaForFill,
   mergeSeoFillFromAi,
   type PreparedSeoFill,
+  regenerateSeoFillTargets,
   seoFillTargets,
   validateSeoFill,
 } from "@/lib/posts/seo-fill";
 import {
   effectiveSeoTitle,
-  isPlaceholderMeta,
   isPlaceholderSeoTitle,
   isPlaceholderSlug,
   seoSlug,
@@ -275,43 +275,41 @@ export async function fillPostSeo(input: {
   currentSlug: string;
   currentSeoTitle: string;
   currentMetaDescription: string;
-  slugManuallyEdited: boolean;
+  /** Explicit Fill SEO — regenerate fields from title + body (not “already set” heuristics). */
+  regenerate?: boolean;
+  /** When false (e.g. published post, user declined slug change), keep current slug. */
+  updateSlug?: boolean;
 }): Promise<FillSeoResult> {
   try {
+    if (!input.body.trim()) {
+      return { ok: false, error: "Add post body before Fill SEO can run." };
+    }
+
     const snapshot = {
       slug: input.currentSlug,
       seoTitle: input.currentSeoTitle ?? "",
       metaDescription: input.currentMetaDescription ?? "",
-      slugManuallyEdited: input.slugManuallyEdited,
+      slugManuallyEdited: false,
     };
-    const targets = seoFillTargets(snapshot);
+    const updateSlug = input.updateSlug ?? true;
+    const targets = input.regenerate
+      ? regenerateSeoFillTargets(updateSlug)
+      : seoFillTargets(snapshot);
     if (!targets.slug && !targets.seoTitle && !targets.metaDescription) {
       return { ok: true };
     }
-    if (!input.body.trim()) return { ok: false, error: "Add a draft body first." };
 
     const supabase = await requireAdmin();
-    const derivedMeta = targets.metaDescription
-      ? deriveMetaForFill({ myTake: input.myTake, body: input.body })
-      : "";
+    const derivedMeta = deriveMetaForFill({ myTake: input.myTake, body: input.body });
 
-    const needsAi =
-      targets.seoTitle ||
-      targets.slug ||
-      (targets.metaDescription && isPlaceholderMeta(derivedMeta));
-
-    let filled: PreparedSeoFill = {
-      slug: snapshot.slug,
-      seoTitle: snapshot.seoTitle,
-      metaDescription: snapshot.metaDescription,
-    };
-
-    if (needsAi) {
-      const ai = await generateSeoFields({ body: input.body, language: input.language });
-      filled = mergeSeoFillFromAi(snapshot, targets, ai, derivedMeta);
-    } else if (targets.metaDescription) {
-      filled = { ...snapshot, metaDescription: derivedMeta };
-    }
+    const ai = await generateSeoFields({
+      title: input.title,
+      body: input.body,
+      language: input.language,
+    });
+    const filled = mergeSeoFillFromAi(snapshot, targets, ai, derivedMeta, {
+      preferAiMeta: Boolean(input.regenerate),
+    });
 
     if (targets.slug) {
       filled.slug = await ensureUniqueSlug(supabase, filled.slug, input.postId);

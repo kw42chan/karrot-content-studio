@@ -35,10 +35,12 @@ export function parseSeoDraft(text: string): SeoDraft {
 }
 
 export async function generateSeoFields(params: {
+  title: string;
   body: string;
   language: "zh-HK" | "en";
 }): Promise<SeoDraft> {
   const zh = params.language === "zh-HK";
+  const workingTitle = params.title.trim();
   const prompt = `You write SEO fields for a Karrot Digital blog post.
 Language for the title and description: ${zh ? "Traditional Chinese (香港書面語)" : "English"}.
 The slug is ALWAYS lowercase English words separated by hyphens (romanize the topic if the post is Chinese). No dates, no "draft".
@@ -51,6 +53,8 @@ Return EXACTLY this plain-text format and nothing else:
 ===SLUG===
 (lowercase-hyphenated-english, at most 60 characters)
 ===END===
+
+Working title (for context): ${workingTitle || "(untitled)"}
 
 Post body:
 ${params.body.trim().slice(0, 6000)}`;
