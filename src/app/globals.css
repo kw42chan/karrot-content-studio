@@ -362,6 +362,17 @@ body {
   background: transparent;
 }
 
+.studio-btn-danger {
+  color: #b42318;
+  border-color: #fecdca;
+  background: #fff5f5;
+}
+
+.studio-btn-danger:hover:not(:disabled) {
+  background: #fee4e2;
+  border-color: #fda29b;
+}
+
 .studio-status {
   display: inline-flex;
   align-items: center;
@@ -767,6 +778,7 @@ body {
   display: flex;
   flex-direction: column;
   padding-bottom: 72px;
+  overflow-x: hidden;
 }
 
 @media (min-width: 768px) {
@@ -1111,6 +1123,8 @@ body {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  min-width: 0;
+  flex: 1;
 }
 
 .studio-status-published {
@@ -1388,6 +1402,81 @@ body {
   .studio-title-input {
     font-size: 22px;
     padding: 16px 16px 8px;
+  }
+
+  .studio-main {
+    padding-bottom: calc(88px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .studio-shell {
+    padding-bottom: calc(88px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .studio-shell-step-settings .studio-panel-settings .studio-panel-b {
+    padding-bottom: calc(40px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .studio-editor-topbar {
+    flex-wrap: wrap;
+    align-items: flex-start;
+    padding: 8px 12px;
+    gap: 8px;
+  }
+
+  .studio-editor-topbar-left {
+    flex-wrap: nowrap;
+    width: auto;
+    max-width: calc(100% - 88px);
+  }
+
+  .studio-crumb-title {
+    max-width: min(52vw, 12rem);
+  }
+
+  .studio-status {
+    flex-shrink: 0;
+    margin-left: auto;
+  }
+
+  .studio-editor-topbar-actions {
+    flex: 1 1 100%;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+  }
+
+  .studio-list-topbar {
+    padding: 0 16px;
+    height: auto;
+    min-height: 56px;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding-top: 10px;
+    padding-bottom: 10px;
+  }
+
+  .studio-list-toolbar {
+    padding: 12px 16px;
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .studio-list-search {
+    max-width: none;
+  }
+
+  .studio-list-table-wrap {
+    padding: 0 12px 32px;
+    overflow-x: auto;
+  }
+
+  .studio-list-table {
+    font-size: 13px;
+    min-width: 0;
+  }
+
+  .studio-list-table thead th,
+  .studio-list-table tbody td {
+    padding: 10px 8px;
   }
 }
 

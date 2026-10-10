@@ -9,7 +9,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
-const LIVE_SITE = "/p";
+const PUBLIC_POSTS_PATH = "/p";
 const AVATAR =
   "https://embed.filekitcdn.com/e/qZ375j2sBMyZfkkw6tSqH2/oJsbTGL9j6tMWN6r6KwcBW";
 
@@ -80,15 +80,13 @@ export function StudioAppShell({
         {newPostPending ? "Creating…" : "+ New post"}
       </button>
       <div className="nav-divider" />
-      <a
-        href={LIVE_SITE}
-        target="_blank"
-        rel="noopener noreferrer"
+      <Link
+        href={PUBLIC_POSTS_PATH}
         className="nav-item nav-item-ext"
         onClick={() => setDrawerOpen(false)}
       >
-        Live site <span className="nav-ext-icon">↗</span>
-      </a>
+        Live site
+      </Link>
     </>
   );
 
@@ -123,7 +121,7 @@ export function StudioAppShell({
         >
           +
         </button>
-        <a href={LIVE_SITE} target="_blank" rel="noopener noreferrer">Live site</a>
+        <Link href={PUBLIC_POSTS_PATH}>Live site</Link>
       </nav>
     </div>
     </StudioNavContext.Provider>
