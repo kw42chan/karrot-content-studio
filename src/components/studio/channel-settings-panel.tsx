@@ -5,6 +5,7 @@ import type { ContentLocale, DistributionChannel } from "@/lib/studio/channels";
 import type { EditorPost, EditorVersion } from "@/components/studio/post-editor";
 import { POST_CATEGORIES, categoryLabel, type PostCategory } from "@/lib/blog/categories";
 import type { ChannelGenerationPrefs } from "@/lib/studio/generation-prefs";
+import { formatStudioDateTimeUtc } from "@/lib/format/timestamp";
 
 export function ChannelSettingsPanel({
   channel,
@@ -282,7 +283,7 @@ export function ChannelSettingsPanel({
             <ul className="space-y-2 text-xs">
               {versions.slice(0, 5).map((v) => (
                 <li key={v.id} className="flex justify-between gap-2">
-                  <span className="truncate">{new Date(v.created_at).toLocaleString()}</span>
+                  <span className="truncate">{formatStudioDateTimeUtc(v.created_at)}</span>
                   <button
                     type="button"
                     className="font-semibold text-[var(--karrot-accent)]"

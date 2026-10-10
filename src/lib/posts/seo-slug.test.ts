@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  effectiveSeoTitle,
   isPlaceholderMeta,
   isPlaceholderSeoTitle,
   isPlaceholderSlug,
@@ -43,6 +44,15 @@ describe("publishBlockReason", () => {
     expect(publishBlockReason("draft-123", "Untitled draft", "")).toMatch(/Fill SEO/);
     expect(
       publishBlockReason("claude-safety", "Keep Claude stable", "A short description."),
+    ).toBeNull();
+  });
+
+  it("uses the post title when SEO title is still the new-post placeholder", () => {
+    expect(effectiveSeoTitle("Untitled draft", "My renamed post")).toBe("My renamed post");
+    expect(
+      publishBlockReason("my-renamed-post", "Untitled draft", "Summary here.", {
+        postTitle: "My renamed post",
+      }),
     ).toBeNull();
   });
 });

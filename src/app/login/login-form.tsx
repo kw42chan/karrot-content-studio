@@ -104,12 +104,6 @@ export function LoginForm() {
             : "Sign-in failed. Please try again."}
         </p>
       )}
-      {formError && (
-        <p className="mt-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
-          {formError}
-        </p>
-      )}
-
       <form className="login-form mt-8" onSubmit={signInWithPassword}>
         <label className="login-field">
           <span>Email</span>

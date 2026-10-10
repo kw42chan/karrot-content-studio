@@ -31,7 +31,12 @@ import { computeReadTimeMinutes } from "@/lib/blog/read-time";
 import { stripSourcesSection } from "@/lib/blog/format";
 import type { PostCategory } from "@/lib/blog/categories";
 import { publicPostPath } from "@/lib/posts/site-publish";
-import { publishBlockReason, seoSlug, withSlugSuffix } from "@/lib/posts/seo-slug";
+import {
+  effectiveSeoTitle,
+  publishBlockReason,
+  seoSlug,
+  withSlugSuffix,
+} from "@/lib/posts/seo-slug";
 import { slugify } from "@/lib/posts/slugify";
 import { readSourceFromUrl } from "@/lib/sources/read-source";
 import type { BilingualSummary } from "@/lib/sources/types";
@@ -291,12 +296,15 @@ export async function publishToSite(input: {
   social_captions?: { zh?: string; en?: string };
 }): Promise<SavePostResult & { slug?: string }> {
   try {
-    const blocked = publishBlockReason(input.slug, input.seo_title, input.meta_description);
+    const seo_title = effectiveSeoTitle(input.seo_title, input.title);
+    const blocked = publishBlockReason(input.slug, input.seo_title, input.meta_description, {
+      postTitle: input.title,
+    });
     if (blocked) return { ok: false, error: blocked };
     const saved = await savePost({
       ...input,
       status: "published",
-      seo_title: input.seo_title,
+      seo_title,
       meta_description: input.meta_description,
       category: input.category,
     });

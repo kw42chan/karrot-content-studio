@@ -652,6 +652,7 @@ body {
 }
 
 .studio-sidebar {
+  display: flex;
   width: 220px;
   flex-shrink: 0;
   background: var(--karrot-card);
@@ -661,6 +662,8 @@ body {
   position: sticky;
   top: 0;
   height: 100vh;
+  max-height: 100vh;
+  overflow: hidden;
 }
 
 .studio-brand {
@@ -699,6 +702,8 @@ body {
   flex-direction: column;
   gap: 4px;
   flex: 1;
+  min-height: 0;
+  overflow-y: auto;
 }
 
 .nav-item {
@@ -758,7 +763,8 @@ body {
 .studio-sidebar-foot {
   border-top: 1px solid var(--karrot-border);
   padding-top: 14px;
-  margin-top: 12px;
+  margin-top: auto;
+  flex-shrink: 0;
   display: flex;
   flex-direction: column;
   align-items: stretch;
@@ -846,6 +852,8 @@ body {
   left: 0;
   width: 260px;
   height: 100vh;
+  max-height: 100vh;
+  overflow: hidden;
   background: var(--karrot-card);
   z-index: 50;
   padding: 20px 14px;

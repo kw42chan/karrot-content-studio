@@ -32,8 +32,25 @@ export function isPlaceholderMeta(meta: string): boolean {
   return meta.trim() === "";
 }
 
-export function publishBlockReason(slug: string, seoTitle: string, meta: string): string | null {
-  if (isPlaceholderSlug(slug) || isPlaceholderSeoTitle(seoTitle) || isPlaceholderMeta(meta)) {
+/** SEO title for publish when the field was never edited away from the new-post default. */
+export function effectiveSeoTitle(seoTitle: string, postTitle: string): string {
+  const seo = seoTitle.trim();
+  if (!isPlaceholderSeoTitle(seo)) return seo;
+  const title = postTitle.trim();
+  if (title && !isPlaceholderSeoTitle(title)) return title;
+  return seo;
+}
+
+export function publishBlockReason(
+  slug: string,
+  seoTitle: string,
+  meta: string,
+  options?: { postTitle?: string },
+): string | null {
+  const resolvedSeo = options?.postTitle
+    ? effectiveSeoTitle(seoTitle, options.postTitle)
+    : seoTitle.trim();
+  if (isPlaceholderSlug(slug) || isPlaceholderSeoTitle(resolvedSeo) || isPlaceholderMeta(meta)) {
     return "Fill SEO first — set a real slug, SEO title, and meta description before publishing.";
   }
   return null;

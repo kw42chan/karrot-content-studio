@@ -38,10 +38,13 @@ import {
 import type { PostCategory } from "@/lib/blog/categories";
 import { navigateToStudioPostsHomeAfterEditorDelete } from "@/lib/studio/routes";
 import {
+  effectiveSeoTitle,
   isPlaceholderMeta,
   isPlaceholderSeoTitle,
   isPlaceholderSlug,
+  publishBlockReason,
 } from "@/lib/posts/seo-slug";
+import { formatStudioDateTimeUtc } from "@/lib/format/timestamp";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
@@ -229,7 +232,15 @@ export function PostEditor({
   const bodyDisplay = useMemo(() => stripSourcesForEditor(body), [body]);
   const creditsBlock = useMemo(() => extractSourcesBlock(body), [body]);
 
-  const ogTitle = variants[igStorage].extra.social_title ?? title;
+  function imageHeadlineForLocale(storage: "zh" | "en"): string {
+    const custom = variants[storage].extra.social_title?.trim() ?? "";
+    if (custom && !isPlaceholderSeoTitle(custom)) return custom;
+    const t = title.trim();
+    if (t && !isPlaceholderSeoTitle(t)) return t;
+    return custom || t || "Post";
+  }
+
+  const ogTitle = imageHeadlineForLocale(igStorage);
   const ogKey = variants[igStorage].extra.key_point ?? "";
   const socialTitleEnc = encodeURIComponent(ogTitle);
   const socialKeyEnc = encodeURIComponent(ogKey);
@@ -477,6 +488,12 @@ export function PostEditor({
     setPublishing(true);
     setMessage(null);
     try {
+      const resolvedSeoTitle = effectiveSeoTitle(seoTitle, title);
+      const blocked = publishBlockReason(slug, seoTitle, metaDescription, { postTitle: title });
+      if (blocked) {
+        notify(blocked, true);
+        return;
+      }
       const result = await publishToSite({
         id: post.id,
         title,
@@ -484,7 +501,7 @@ export function PostEditor({
         my_take: myTake,
         body,
         body_language: lang,
-        seo_title: seoTitle,
+        seo_title: resolvedSeoTitle,
         meta_description: metaDescription,
         category: category || null,
         key_point: variants.zh.extra.key_point,
@@ -496,6 +513,7 @@ export function PostEditor({
         return;
       }
       setStatus("published");
+      if (resolvedSeoTitle !== seoTitle) setSeoTitle(resolvedSeoTitle);
       const url = `${window.location.origin}/p/${result.slug}`;
       notify(`Published. ${url}`);
     } catch (e) {
@@ -712,7 +730,16 @@ export function PostEditor({
           <input
             className="studio-title-input"
             value={title}
-            onChange={(e) => setTitle(e.target.value)}
+            onChange={(e) => {
+              const next = e.target.value;
+              setSeoTitle((seo) => {
+                if (!seoEdited.current && (isPlaceholderSeoTitle(seo) || seo === title)) {
+                  return next.trim() || seo;
+                }
+                return seo;
+              });
+              setTitle(next);
+            }}
             readOnly={demoMode}
           />
           <div className="studio-lang-bar">
@@ -1129,7 +1156,7 @@ function CommentsSection({
           >
             <p>{c.body}</p>
             <div className="mt-1 flex justify-between text-[11px] text-[var(--karrot-muted)]">
-              <span>{new Date(c.created_at).toLocaleString()}</span>
+              <span>{formatStudioDateTimeUtc(c.created_at)}</span>
               {!c.resolved && (
                 <button
                   type="button"

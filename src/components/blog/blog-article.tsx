@@ -60,16 +60,16 @@ export function BlogArticle({ post }: { post: PublicBlogPost }) {
       <div className="prose blog-prose" lang={lang} dangerouslySetInnerHTML={{ __html: html }} />
 
       <div className="post-end" lang="en">
-        <div className="chips">
-          <span className="muted" style={{ font: "500 13px Roboto,sans-serif", marginRight: 4 }}>
-            Filed under
-          </span>
-          {post.category && (
+        {post.category ? (
+          <div className="chips">
+            <span className="muted" style={{ font: "500 13px Roboto,sans-serif", marginRight: 4 }}>
+              Filed under
+            </span>
             <Link className="chip chip-sm" href={categoryHref(post.category)}>
               {categoryLabel(post.category)}
             </Link>
-          )}
-        </div>
+          </div>
+        ) : null}
         <BlogShare title={title} slug={post.slug} />
       </div>
 
