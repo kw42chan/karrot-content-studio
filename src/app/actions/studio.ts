@@ -32,6 +32,7 @@ import { stripSourcesSection } from "@/lib/blog/format";
 import type { PostCategory } from "@/lib/blog/categories";
 import { publicPostPath } from "@/lib/posts/site-publish";
 import {
+  publishPreflightMessage,
   publishValidationMessage,
   resolvePublishFields,
 } from "@/lib/posts/publish-prep";
@@ -313,6 +314,12 @@ export async function publishToSite(input: {
   slug_manually_edited?: boolean;
 }): Promise<SavePostResult & { slug?: string }> {
   try {
+    const preflight = publishPreflightMessage({
+      title: input.title,
+      body: input.body,
+    });
+    if (preflight) return { ok: false, error: preflight };
+
     const resolved = resolvePublishFields({
       title: input.title,
       slug: input.slug,

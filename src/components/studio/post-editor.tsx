@@ -43,7 +43,9 @@ import {
   isPlaceholderSlug,
 } from "@/lib/posts/seo-slug";
 import {
+  deriveMetaDescription,
   proposeSlugFromTitle,
+  publishPreflightMessage,
   publishValidationMessage,
   resolvePublishFields,
 } from "@/lib/posts/publish-prep";
@@ -443,6 +445,16 @@ export function PostEditor({
     setSaving(true);
     try {
       if (activeChannel === "blog") {
+        const metaToSave =
+          !metaEdited.current && isPlaceholderMeta(metaDescription)
+            ? deriveMetaDescription({
+                metaDescription: "",
+                myTake,
+                body,
+              })
+            : metaDescription;
+        if (metaToSave !== metaDescription) setMetaDescription(metaToSave);
+
         const result = await savePost({
           id: post.id,
           title,
@@ -455,7 +467,7 @@ export function PostEditor({
           social_title: variants.zh.extra.social_title,
           social_captions: { zh: variants.zh.content, en: variants.en.content },
           seo_title: seoTitle,
-          meta_description: metaDescription,
+          meta_description: metaToSave,
           category: category || null,
         });
         if (!result.ok) {
@@ -488,6 +500,12 @@ export function PostEditor({
       notify("Demo only — connect Supabase to save.", true);
       return;
     }
+    const preflight = publishPreflightMessage({ title, body });
+    if (preflight) {
+      notify(preflight, true);
+      return;
+    }
+
     const resolved = resolvePublishFields({
       title,
       slug,

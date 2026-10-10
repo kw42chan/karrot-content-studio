@@ -75,12 +75,7 @@ export function filterPublicPosts(posts: PublicBlogPost[]): PublicBlogPost[] {
 export function pickFeaturedPost(posts: PublicBlogPost[]): PublicBlogPost | null {
   const visible = filterPublicPosts(posts);
   if (!visible.length) return null;
-  const sorted = sortNewest(visible);
-  const withGuide = sorted.filter(hasKeyPoints);
-  if (withGuide.length) return withGuide[0];
-  const withCategory = sorted.filter((p) => p.category);
-  if (withCategory.length) return withCategory[0];
-  return sorted[0];
+  return sortNewest(visible)[0];
 }
 
 /** True when cover_url is safe to attempt as a public card background (http/https only). */
@@ -96,6 +91,22 @@ export function isUsableCoverUrl(url: string | null | undefined): boolean {
   }
 }
 
+const COVER_WORD_MAX = 8;
+
+function fitCoverWords(display: string, maxLen: number): string {
+  const words = display.split(/\s+/).filter(Boolean);
+  if (!words.length) return "Post";
+  let out = words[0];
+  for (let i = 1; i < words.length; i++) {
+    const next = `${out} ${words[i]}`;
+    if (next.length <= maxLen) out = next;
+    else break;
+  }
+  if (out.length <= maxLen) return out;
+  if (words[0].length <= maxLen) return words[0];
+  return words[0].slice(0, maxLen);
+}
+
 export function coverWordForPost(post: PublicBlogPost): string {
   const display = publicDisplayTitle(post);
   if (/harness/i.test(display) && /engineering/i.test(display)) {
@@ -103,9 +114,10 @@ export function coverWordForPost(post: PublicBlogPost): string {
   }
   if (post.body_language === "zh-HK") {
     const compact = display.replace(/\s/g, "");
-    if (compact.length >= 4) return compact.slice(0, 6);
-    return "帳號安全";
+    const latinLead = compact.match(/^[A-Za-z]{4,}/);
+    if (latinLead) return latinLead[0].slice(0, 10);
+    if (compact.length <= 6) return compact || "帳號安全";
+    return compact.slice(0, 6);
   }
-  const words = display.split(/\s+/).filter(Boolean);
-  return words.slice(0, 2).join(" ") || "Post";
+  return fitCoverWords(display, COVER_WORD_MAX);
 }

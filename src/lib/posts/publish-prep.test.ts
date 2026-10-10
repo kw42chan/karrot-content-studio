@@ -3,6 +3,7 @@ import { isPlaceholderSlug } from "./seo-slug";
 import {
   deriveMetaDescription,
   proposeSlugFromTitle,
+  publishPreflightMessage,
   publishValidationMessage,
   resolvePublishFields,
 } from "./publish-prep";
@@ -28,6 +29,22 @@ describe("publish-prep", () => {
     });
     expect(meta.length).toBeGreaterThan(10);
     expect(meta.length).toBeLessThanOrEqual(155);
+  });
+
+  it("prefers body over My take for meta", () => {
+    const meta = deriveMetaDescription({
+      metaDescription: "",
+      myTake: "Author opinion only.",
+      body: "Factual summary paragraph in the blog body.",
+    });
+    expect(meta).toContain("Factual");
+    expect(meta).not.toContain("Author opinion");
+  });
+
+  it("preflight names title and body before SEO fields", () => {
+    expect(
+      publishPreflightMessage({ title: "Untitled draft", body: "" }),
+    ).toBe("Add a title and post body before publishing.");
   });
 
   it("resolves slug, seo, and meta for a renamed draft", () => {

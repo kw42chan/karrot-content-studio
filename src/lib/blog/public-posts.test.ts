@@ -45,7 +45,7 @@ describe("publicDisplayTitle", () => {
 });
 
 describe("pickFeaturedPost", () => {
-  it("prefers newest post with key_points over newer test post", () => {
+  it("uses the newest visible published post for Latest post", () => {
     const guide = post({
       id: "1",
       title: "Claude guide",
@@ -53,14 +53,16 @@ describe("pickFeaturedPost", () => {
       key_points: [{ title: "One" }],
       published_at: "2026-10-07T00:00:00Z",
       category: "account-security",
+      seo_title: "Claude guide",
     });
-    const test = post({
+    const newer = post({
       id: "2",
-      title: "Retest 3-5 persistence",
-      slug: "retest",
+      title: "Newer article",
+      slug: "newer-article",
       published_at: "2026-10-08T00:00:00Z",
+      seo_title: "Newer article",
     });
-    expect(pickFeaturedPost([test, guide])?.slug).toBe("claude-guide");
+    expect(pickFeaturedPost([guide, newer])?.slug).toBe("newer-article");
   });
 });
 
@@ -86,6 +88,19 @@ describe("isUsableCoverUrl", () => {
 });
 
 describe("coverWordForPost", () => {
+  it("uses whole words for English titles without mid-word chop", () => {
+    const word = coverWordForPost(
+      post({
+        id: "1",
+        title: "QA r4 test",
+        slug: "qa-r4-test",
+        seo_title: "QA r4 test",
+        body_language: "en",
+      }),
+    );
+    expect(word).toBe("QA r4");
+  });
+
   it("does not use fdraft internal title for zh cover", () => {
     const word = coverWordForPost(
       post({

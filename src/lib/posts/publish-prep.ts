@@ -44,7 +44,15 @@ function stripMarkdownForExcerpt(body: string): string {
     .trim();
 }
 
-/** Non-AI meta description for publish when the field is still empty. */
+export function isPlaceholderPostTitle(title: string): boolean {
+  return isPlaceholderSeoTitle(title);
+}
+
+export function hasPublishableBody(body: string): boolean {
+  return stripMarkdownForExcerpt(stripSourcesSection(body)).length > 0;
+}
+
+/** Non-AI meta description when the field is still empty (body before My take). */
 export function deriveMetaDescription(input: {
   metaDescription: string;
   myTake: string;
@@ -53,13 +61,23 @@ export function deriveMetaDescription(input: {
   const existing = input.metaDescription.trim();
   if (existing) return clampMeta(existing);
 
-  const myTake = input.myTake.trim();
-  if (myTake) return clampMeta(myTake);
-
   const bodyText = stripMarkdownForExcerpt(stripSourcesSection(input.body));
   if (bodyText) return clampMeta(bodyText);
 
+  const myTake = input.myTake.trim();
+  if (myTake) return clampMeta(myTake);
+
   return "";
+}
+
+/** Instant client checks — title/body before derived SEO fields. */
+export function publishPreflightMessage(input: { title: string; body: string }): string | null {
+  const needsTitle = isPlaceholderPostTitle(input.title);
+  const needsBody = !hasPublishableBody(input.body);
+  if (needsTitle && needsBody) return "Add a title and post body before publishing.";
+  if (needsTitle) return "Add a title before publishing.";
+  if (needsBody) return "Add post body before publishing.";
+  return null;
 }
 
 function slugHashSuffix(title: string, postId: string): string {
@@ -82,7 +100,8 @@ export function proposeSlugFromTitle(title: string, postId: string, seoTitle?: s
   if (fromSeo.length >= 2) {
     return withSlugSuffix(fromSeo, postId.replace(/-/g, "").slice(0, 6));
   }
-  return slugHashSuffix(title || "post", postId);
+  const fallback = slugHashSuffix(title || "post", postId);
+  return fallback.length >= 2 ? fallback : `post-${postId.replace(/-/g, "").slice(0, 8) || "00000000"}`;
 }
 
 export function resolvePublishFields(input: ResolvePublishInput): ResolvedPublishFields {
@@ -104,18 +123,13 @@ export function resolvePublishFields(input: ResolvePublishInput): ResolvedPublis
 export function publishValidationMessage(
   fields: ResolvedPublishFields & { postTitle?: string },
 ): string | null {
-  const seo = fields.postTitle
-    ? effectiveSeoTitle(fields.seoTitle, fields.postTitle)
-    : fields.seoTitle.trim();
-
   const missing: string[] = [];
   if (isPlaceholderSlug(fields.slug)) missing.push("URL slug");
-  if (isPlaceholderSeoTitle(seo)) missing.push("SEO title");
   if (isPlaceholderMeta(fields.metaDescription)) missing.push("meta description");
 
   if (missing.length === 0) return null;
   if (missing.length === 1) {
-    return `Add a ${missing[0]} before publishing (or add body / My take so meta can be filled automatically).`;
+    return `Add a ${missing[0]} before publishing.`;
   }
   return `Before publishing, add: ${missing.join(", ")}.`;
 }
