@@ -46,7 +46,7 @@ supabase db push
 
 If `ADMIN_EMAIL` is not `darwin.chankawing@gmail.com`, update `public.studio_admin_email()` in SQL to match before go-live.
 
-**RLS:** All `studio_*` admin policies use `public.studio_is_admin()` only. Helper functions are not granted to `anon` / `authenticated` (see `20261010100000_studio_function_security.sql`) so clients cannot RPC-probe admin status; RLS still evaluates them as the table owner.
+**RLS:** All `studio_*` admin policies use `public.studio_is_admin()` only. `studio_is_admin()` is granted to `authenticated` (required for RLS) but not `anon`; `studio_admin_email()` is `service_role` only (see `20261010100000_studio_function_security.sql`).
 
 ### 4. Admin sign-in (Supabase Auth)
 
