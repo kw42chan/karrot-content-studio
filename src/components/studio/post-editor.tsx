@@ -38,12 +38,15 @@ import {
 import type { PostCategory } from "@/lib/blog/categories";
 import { navigateToStudioPostsHomeAfterEditorDelete } from "@/lib/studio/routes";
 import {
-  effectiveSeoTitle,
   isPlaceholderMeta,
   isPlaceholderSeoTitle,
   isPlaceholderSlug,
-  publishBlockReason,
 } from "@/lib/posts/seo-slug";
+import {
+  proposeSlugFromTitle,
+  publishValidationMessage,
+  resolvePublishFields,
+} from "@/lib/posts/publish-prep";
 import { formatStudioDateTimeUtc } from "@/lib/format/timestamp";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -485,35 +488,50 @@ export function PostEditor({
       notify("Demo only — connect Supabase to save.", true);
       return;
     }
+    const resolved = resolvePublishFields({
+      title,
+      slug,
+      seoTitle,
+      metaDescription,
+      myTake,
+      body,
+      postId: post.id,
+      status,
+      slugManuallyEdited: slugEdited.current,
+    });
+    const blocked = publishValidationMessage({ ...resolved, postTitle: title });
+    if (blocked) {
+      notify(blocked, true);
+      return;
+    }
+
     setPublishing(true);
     setMessage(null);
     try {
-      const resolvedSeoTitle = effectiveSeoTitle(seoTitle, title);
-      const blocked = publishBlockReason(slug, seoTitle, metaDescription, { postTitle: title });
-      if (blocked) {
-        notify(blocked, true);
-        return;
-      }
       const result = await publishToSite({
         id: post.id,
         title,
-        slug,
+        slug: resolved.slug,
         my_take: myTake,
         body,
         body_language: lang,
-        seo_title: resolvedSeoTitle,
-        meta_description: metaDescription,
+        seo_title: resolved.seoTitle,
+        meta_description: resolved.metaDescription,
         category: category || null,
         key_point: variants.zh.extra.key_point,
         social_title: variants.zh.extra.social_title,
         social_captions: { zh: variants.zh.content, en: variants.en.content },
+        status,
+        slug_manually_edited: slugEdited.current,
       });
       if (!result.ok) {
         notify(result.error, true);
         return;
       }
       setStatus("published");
-      if (resolvedSeoTitle !== seoTitle) setSeoTitle(resolvedSeoTitle);
+      setSlug(result.slug ?? resolved.slug);
+      if (resolved.seoTitle !== seoTitle) setSeoTitle(resolved.seoTitle);
+      if (resolved.metaDescription !== metaDescription) setMetaDescription(resolved.metaDescription);
       const url = `${window.location.origin}/p/${result.slug}`;
       notify(`Published. ${url}`);
     } catch (e) {
@@ -590,12 +608,30 @@ export function PostEditor({
           </span>
         </div>
         <div className="studio-editor-topbar-actions">
-          <Link
-            href={demoMode ? "/demo/post" : `/p/${slug}`}
-            className="studio-btn studio-btn-ghost hidden sm:inline-flex"
-          >
-            Preview
-          </Link>
+          {demoMode ? (
+            <Link href="/demo/post" className="studio-btn studio-btn-ghost hidden sm:inline-flex">
+              Preview
+            </Link>
+          ) : status === "published" ? (
+            <Link
+              href={`/p/${slug}`}
+              className="studio-btn studio-btn-ghost hidden sm:inline-flex"
+              target="_blank"
+              rel="noreferrer"
+            >
+              Preview
+            </Link>
+          ) : (
+            <Link
+              href={`/preview/post/${post.id}`}
+              className="studio-btn studio-btn-ghost hidden sm:inline-flex"
+              target="_blank"
+              rel="noreferrer"
+              title="Draft preview (admin only — not on the public blog yet)"
+            >
+              Preview
+            </Link>
+          )}
           <button
             type="button"
             disabled={actionLocked}
@@ -737,6 +773,12 @@ export function PostEditor({
                   return next.trim() || seo;
                 }
                 return seo;
+              });
+              setSlug((prev) => {
+                if (!slugEdited.current && isPlaceholderSlug(prev)) {
+                  return proposeSlugFromTitle(next, post.id, seoTitle);
+                }
+                return prev;
               });
               setTitle(next);
             }}
@@ -885,6 +927,16 @@ export function PostEditor({
                 {showGenerateEmpty ? (
                   <div className="studio-generate-empty">
                     <p>No {contentLocale === "zh-HK" ? "中文" : "English"} caption yet.</p>
+                    <p className="text-xs text-[var(--karrot-muted)]">
+                      Image preview uses the post title and key point — caption not required.
+                    </p>
+                    <div className="my-3 overflow-hidden rounded-lg border border-[var(--karrot-border)]">
+                      <img
+                        src={igAspect === "square" ? squareOg : portraitOg}
+                        alt="Social image preview"
+                        className="w-full"
+                      />
+                    </div>
                     <button
                       type="button"
                       className="studio-btn studio-btn-primary"

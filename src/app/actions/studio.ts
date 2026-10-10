@@ -32,11 +32,10 @@ import { stripSourcesSection } from "@/lib/blog/format";
 import type { PostCategory } from "@/lib/blog/categories";
 import { publicPostPath } from "@/lib/posts/site-publish";
 import {
-  effectiveSeoTitle,
-  publishBlockReason,
-  seoSlug,
-  withSlugSuffix,
-} from "@/lib/posts/seo-slug";
+  publishValidationMessage,
+  resolvePublishFields,
+} from "@/lib/posts/publish-prep";
+import { isPlaceholderSlug, seoSlug, withSlugSuffix } from "@/lib/posts/seo-slug";
 import { slugify } from "@/lib/posts/slugify";
 import { readSourceFromUrl } from "@/lib/sources/read-source";
 import type { BilingualSummary } from "@/lib/sources/types";
@@ -281,6 +280,22 @@ export async function fillPostSeo(input: {
   }
 }
 
+async function ensureUniqueSlug(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  slug: string,
+  postId: string,
+): Promise<string> {
+  let candidate = slug.trim();
+  if (!candidate) candidate = "post";
+  const { data: clash } = await supabase
+    .from("studio_posts")
+    .select("id")
+    .eq("slug", candidate)
+    .maybeSingle();
+  if (!clash || clash.id === postId) return candidate;
+  return withSlugSuffix(candidate, postId.replace(/-/g, "").slice(0, 6));
+}
+
 export async function publishToSite(input: {
   id: string;
   title: string;
@@ -294,38 +309,43 @@ export async function publishToSite(input: {
   key_point?: string;
   social_title?: string;
   social_captions?: { zh?: string; en?: string };
+  status?: "draft" | "published";
+  slug_manually_edited?: boolean;
 }): Promise<SavePostResult & { slug?: string }> {
   try {
-    const seo_title = effectiveSeoTitle(input.seo_title, input.title);
-    const blocked = publishBlockReason(input.slug, input.seo_title, input.meta_description, {
-      postTitle: input.title,
+    const resolved = resolvePublishFields({
+      title: input.title,
+      slug: input.slug,
+      seoTitle: input.seo_title,
+      metaDescription: input.meta_description,
+      myTake: input.my_take,
+      body: input.body,
+      postId: input.id,
+      status: input.status ?? "draft",
+      slugManuallyEdited: input.slug_manually_edited ?? false,
     });
+
+    const blocked = publishValidationMessage({ ...resolved, postTitle: input.title });
     if (blocked) return { ok: false, error: blocked };
+
+    const supabase = await requireAdmin();
+    const slugOut = await ensureUniqueSlug(supabase, resolved.slug, input.id);
+
     const saved = await savePost({
       ...input,
+      slug: slugOut,
       status: "published",
-      seo_title,
-      meta_description: input.meta_description,
+      seo_title: resolved.seoTitle,
+      meta_description: resolved.metaDescription,
       category: input.category,
     });
     if (!saved.ok) return saved;
 
-    const supabase = await requireAdmin();
-    const { data: row } = await supabase
-      .from("studio_posts")
-      .select("status, my_take")
-      .eq("id", input.id)
-      .maybeSingle();
-    if (!row || row.status !== "published") {
-      return {
-        ok: false,
-        error: "Publish did not stick — the post is still a draft. Try again or check your connection.",
-      };
-    }
-
     revalidatePath("/p");
-    revalidatePath(publicPostPath(input.slug));
-    return { ok: true, slug: input.slug };
+    revalidatePath(publicPostPath(slugOut));
+    revalidatePath(`/studio/posts/${input.id}`);
+    revalidatePath(`/preview/post/${input.id}`);
+    return { ok: true, slug: slugOut };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Publish failed." };
   }
