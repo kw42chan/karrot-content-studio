@@ -20,7 +20,7 @@ function post(partial: Partial<PublicBlogPost> & Pick<PublicBlogPost, "id" | "ti
 }
 
 describe("buildMoreInCategory", () => {
-  it("returns 3 cards topping up with previous posts from other categories", () => {
+  it("returns up to 3 real posts, topping up with previous posts from other categories", () => {
     const current = post({
       id: "c",
       title: "Claude guide",
@@ -35,10 +35,24 @@ describe("buildMoreInCategory", () => {
       category: "automation",
       published_at: "2026-04-23T00:00:00Z",
     });
-    const related = buildMoreInCategory([current, harness], current, true, 3);
+    const aiTools = post({
+      id: "a",
+      title: "AI tools roundup",
+      slug: "ai-tools-roundup",
+      category: "ai-tools",
+      published_at: "2026-03-01T00:00:00Z",
+    });
+    const caseStudy = post({
+      id: "cs",
+      title: "Retail case study",
+      slug: "retail-case-study",
+      category: "case-studies",
+      published_at: "2026-02-01T00:00:00Z",
+    });
+    const related = buildMoreInCategory([current, harness, aiTools, caseStudy], current, 3);
     expect(related).toHaveLength(3);
-    expect(related.some((c) => c.kind === "post" && c.post.slug === "harness-engineering" && c.previous)).toBe(
-      true,
-    );
+    expect(related.every((c) => c.kind === "post")).toBe(true);
+    expect(related.some((c) => c.post.slug === "harness-engineering" && c.previous)).toBe(true);
+    expect(related.some((c) => c.post.slug === "claude-guide")).toBe(false);
   });
 });
