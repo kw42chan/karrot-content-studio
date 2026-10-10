@@ -131,6 +131,10 @@ export function ChannelSettingsPanel({
                 ))}
               </select>
             </div>
+            <p className="text-xs leading-snug text-[var(--karrot-muted)]">
+              Post cards on <strong>/p</strong> use taupe covers with title words. Custom cover image upload is not
+              available in the studio yet.
+            </p>
             {onFillSeo && (
               <button
                 type="button"

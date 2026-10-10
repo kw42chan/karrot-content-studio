@@ -83,6 +83,19 @@ export function pickFeaturedPost(posts: PublicBlogPost[]): PublicBlogPost | null
   return sorted[0];
 }
 
+/** True when cover_url is safe to attempt as a public card background (http/https only). */
+export function isUsableCoverUrl(url: string | null | undefined): boolean {
+  if (!url) return false;
+  const trimmed = url.trim();
+  if (!trimmed || trimmed.length > 2048) return false;
+  try {
+    const parsed = new URL(trimmed);
+    return parsed.protocol === "http:" || parsed.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
 export function coverWordForPost(post: PublicBlogPost): string {
   const display = publicDisplayTitle(post);
   if (/harness/i.test(display) && /engineering/i.test(display)) {

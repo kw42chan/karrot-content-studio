@@ -3,6 +3,7 @@ import {
   coverWordForPost,
   filterPublicPosts,
   isTestOrInternalPost,
+  isUsableCoverUrl,
   pickFeaturedPost,
   publicDisplayTitle,
 } from "./public-posts";
@@ -71,6 +72,16 @@ describe("filterPublicPosts", () => {
     ]);
     expect(visible).toHaveLength(1);
     expect(visible[0].slug).toBe("real-post");
+  });
+});
+
+describe("isUsableCoverUrl", () => {
+  it("accepts https URLs and rejects empty or non-http schemes", () => {
+    expect(isUsableCoverUrl("https://cdn.example.com/cover.jpg")).toBe(true);
+    expect(isUsableCoverUrl("  ")).toBe(false);
+    expect(isUsableCoverUrl("not-a-url")).toBe(false);
+    expect(isUsableCoverUrl("javascript:alert(1)")).toBe(false);
+    expect(isUsableCoverUrl("data:image/png;base64,abc")).toBe(false);
   });
 });
 

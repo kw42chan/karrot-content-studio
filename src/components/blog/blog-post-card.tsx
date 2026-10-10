@@ -5,27 +5,12 @@ import {
   postDisplayTitle,
   readTimeLabel,
 } from "@/lib/blog/format";
-import { coverWordForPost } from "@/lib/blog/public-posts";
+import { BlogPostCover } from "@/components/blog/blog-post-cover";
 import type { PublicBlogPost } from "@/lib/blog/types";
 import Link from "next/link";
 
 function Cover({ post }: { post: PublicBlogPost }) {
-  if (post.cover_url) {
-    return (
-      <div className="cover" style={{ backgroundImage: `url(${post.cover_url})`, backgroundSize: "cover" }}>
-        <span className="cover-word h-anton" />
-      </div>
-    );
-  }
-  const coverText = coverWordForPost(post);
-  const coverLang = post.body_language === "zh-HK" ? "zh-Hant-HK" : "en";
-  return (
-    <div className="cover">
-      <span className="cover-word h-anton" lang={coverLang} style={{ whiteSpace: "pre-line" }}>
-        {coverText}
-      </span>
-    </div>
-  );
+  return <BlogPostCover post={post} />;
 }
 
 export function BlogPostCard({
