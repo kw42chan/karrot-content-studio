@@ -35,7 +35,7 @@ import {
   publishValidationMessage,
   resolvePublishFields,
 } from "@/lib/posts/publish-prep";
-import { isPlaceholderSlug, seoSlug, withSlugSuffix } from "@/lib/posts/seo-slug";
+import { seoSlug, withSlugSuffix } from "@/lib/posts/seo-slug";
 import { slugify } from "@/lib/posts/slugify";
 import { readSourceFromUrl } from "@/lib/sources/read-source";
 import type { BilingualSummary } from "@/lib/sources/types";
