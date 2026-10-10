@@ -30,7 +30,7 @@ Copy `.env.example` to `.env.local`. Do not commit secrets.
 | `SUPABASE_SERVICE_ROLE_KEY` | Optional | Not used by normal app routes (session + RLS) |
 | `ADMIN_EMAIL` | Yes | Only this email may use `/studio` (must match `studio_admin_email()` in DB) |
 | `OPENROUTER_API_KEY` | For AI | Summaries, drafts, SEO fill, adjustments |
-| `OPENROUTER_MODEL` | No | Default `qwen/qwen3.7-plus` |
+| `OPENROUTER_MODEL` | No | Default `qwen/qwen3-vl-235b-a22b-instruct` |
 | `KIT_API_KEY` | No | Unused for publish; legacy Kit helpers only |
 | `BOOKING_URL` | No | CTA on published posts (default `/p#book`) |
 | `NEXT_PUBLIC_BOOKING_URL` | No | Client-visible booking CTA (default `/p#book`) |
