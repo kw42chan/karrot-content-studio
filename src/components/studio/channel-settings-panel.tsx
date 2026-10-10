@@ -5,7 +5,7 @@ import type { ContentLocale, DistributionChannel } from "@/lib/studio/channels";
 import type { EditorPost, EditorVersion } from "@/components/studio/post-editor";
 import { POST_CATEGORIES, categoryLabel, type PostCategory } from "@/lib/blog/categories";
 import type { ChannelGenerationPrefs } from "@/lib/studio/generation-prefs";
-import { formatStudioDateTimeUtc } from "@/lib/format/timestamp";
+import { formatStudioDateTimeHkt } from "@/lib/format/timestamp";
 
 export function ChannelSettingsPanel({
   channel,
@@ -247,7 +247,14 @@ export function ChannelSettingsPanel({
               </div>
             </div>
             <div className="overflow-hidden rounded-lg border border-[var(--karrot-border)]">
-              <img src={igAspect === "square" ? squareOg : portraitOg} alt="OG preview" className="w-full" />
+              <img
+                key={igAspect === "square" ? squareOg : portraitOg}
+                src={igAspect === "square" ? squareOg : portraitOg}
+                alt="OG preview"
+                className="w-full"
+                loading="eager"
+                decoding="async"
+              />
             </div>
             <div className="flex flex-wrap gap-2">
               <button
@@ -298,7 +305,7 @@ export function ChannelSettingsPanel({
             <ul className="space-y-2 text-xs">
               {versions.slice(0, 5).map((v) => (
                 <li key={v.id} className="flex justify-between gap-2">
-                  <span className="truncate">{formatStudioDateTimeUtc(v.created_at)}</span>
+                  <span className="truncate">{formatStudioDateTimeHkt(v.created_at)}</span>
                   <button
                     type="button"
                     className="font-semibold text-[var(--karrot-accent)]"

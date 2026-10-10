@@ -128,7 +128,7 @@ describe("coverWordForPost", () => {
     ).toBe("中國護照註冊");
   });
 
-  it("uses CJK segment when Latin leads on zh posts", () => {
+  it("keeps leading Latin plus following CJK when Latin leads on zh posts", () => {
     expect(
       coverWordForPost(
         post({
@@ -139,7 +139,21 @@ describe("coverWordForPost", () => {
           body_language: "zh-HK",
         }),
       ),
-    ).toBe("帳號安全");
+    ).toBe("Claude帳號安全");
+  });
+
+  it("keeps leading Latin on long Claude zh SEO titles", () => {
+    expect(
+      coverWordForPost(
+        post({
+          id: "1",
+          title: "fdraft",
+          slug: "claude-account-safety",
+          seo_title: "Claude帳號安全設定指南：穩定使用必備技巧",
+          body_language: "zh-HK",
+        }),
+      ),
+    ).toBe("Claude帳號安全");
   });
 
   it("keeps spaced Latin words without mid-word chop", () => {
@@ -180,6 +194,7 @@ describe("coverWordForPost", () => {
       }),
     );
     expect(word).not.toBe("fdraft");
+    expect(word.startsWith("Claude")).toBe(true);
     expect(word).toContain("帳號");
   });
 });

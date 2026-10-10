@@ -1,6 +1,6 @@
 "use client";
 
-import { formatStudioDateTimeUtc } from "@/lib/format/timestamp";
+import { formatStudioDateTimeHkt } from "@/lib/format/timestamp";
 import Link from "next/link";
 import { useMemo, useState } from "react";
 
@@ -110,7 +110,7 @@ export function PostsList({
                   </div>
                 </td>
                 <td className="studio-list-date">
-                  {formatStudioDateTimeUtc(p.updated_at)}
+                  {formatStudioDateTimeHkt(p.updated_at)}
                 </td>
                 <td>
                   <span
