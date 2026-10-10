@@ -17,7 +17,7 @@ export function getOpenRouterKey(): string {
 }
 
 export function getOpenRouterModel(): string {
-  return process.env.OPENROUTER_MODEL ?? "qwen/qwen3-vl-32b-instruct";
+  return process.env.OPENROUTER_MODEL ?? "qwen/qwen3.7-plus";
 }
 
 export function getKitApiKey(): string {

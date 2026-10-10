@@ -1,3 +1,4 @@
+import { OpenRouterRequestError } from "@/lib/ai/openrouter-errors";
 import { completeJson } from "@/lib/ai/llm-json";
 import { getOpenRouterKey, getOpenRouterModel, getSiteUrl } from "@/lib/env";
 import { formatSourceBundlesForPrompt } from "@/lib/sources/chunk-for-ai";
@@ -72,7 +73,7 @@ ${sourceTextForAi(text, 12000)}`;
 
   if (!res.ok) {
     const err = await res.text();
-    throw new Error(`OpenRouter error: ${res.status} ${err}`);
+    throw new OpenRouterRequestError("summarizeSource", res.status, err);
   }
 
   const json = (await res.json()) as {
@@ -216,6 +217,11 @@ New source summary: ${params.newSourceSummary}`;
     }),
   });
 
+  if (!res.ok) {
+    const err = await res.text();
+    throw new OpenRouterRequestError("suggestEnrichmentParagraph", res.status, err);
+  }
+
   const json = (await res.json()) as {
     choices?: { message?: { content?: string } }[];
   };
@@ -266,7 +272,10 @@ ${joined}`;
     }),
   });
 
-  if (!res.ok) throw new Error(`OpenRouter comment revision failed: ${res.status}`);
+  if (!res.ok) {
+    const err = await res.text();
+    throw new OpenRouterRequestError("reviseDraftFromComments", res.status, err);
+  }
   const json = (await res.json()) as { choices?: { message?: { content?: string } }[] };
   const content = json.choices?.[0]?.message?.content;
   if (!content) throw new Error("Empty comment revision response");

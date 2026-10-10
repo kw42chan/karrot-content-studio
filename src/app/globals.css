@@ -148,14 +148,35 @@ body {
   background: var(--karrot-border);
 }
 
-.studio-change-password {
-  width: 100%;
-  margin-top: 10px;
-  padding-top: 10px;
-  border-top: 1px solid var(--karrot-border);
+.studio-change-password-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  z-index: 60;
+}
+
+.studio-change-password-dialog {
+  position: fixed;
+  inset: 0;
+  z-index: 61;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  pointer-events: none;
+}
+
+.studio-change-password-panel {
+  pointer-events: auto;
+  width: min(420px, 100%);
+  background: var(--studio-surface, #fff);
+  border: 1px solid var(--karrot-border);
+  border-radius: 14px;
+  padding: 20px 22px;
+  box-shadow: 0 16px 48px rgba(55, 63, 69, 0.18);
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 12px;
 }
 
 .studio-change-password-title {

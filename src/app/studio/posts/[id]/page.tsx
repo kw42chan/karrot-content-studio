@@ -3,6 +3,8 @@ import type { PostVariantRecord } from "@/lib/studio/channels";
 import { createClient } from "@/lib/supabase/server";
 import { notFound } from "next/navigation";
 
+export const dynamic = "force-dynamic";
+
 export default async function StudioPostPage({
   params,
 }: {
@@ -10,9 +12,14 @@ export default async function StudioPostPage({
 }) {
   const { id } = await params;
   const supabase = await createClient();
+  await supabase.auth.getUser();
 
-  const { data: post } = await supabase.from("studio_posts").select("*").eq("id", id).single();
-  if (!post) notFound();
+  const { data: post, error: postError } = await supabase
+    .from("studio_posts")
+    .select("*")
+    .eq("id", id)
+    .maybeSingle();
+  if (postError || !post) notFound();
 
   const { data: links } = await supabase
     .from("studio_post_sources")
@@ -75,12 +82,12 @@ export default async function StudioPostPage({
         body_language: post.body_language,
         key_point: post.key_point,
         social_title: post.social_title ?? null,
-        social_captions: post.social_captions,
+        social_captions: post.social_captions ?? null,
         kit_broadcast_id: post.kit_broadcast_id,
         seo_title: post.seo_title ?? null,
         meta_description: post.meta_description ?? null,
         category: post.category ?? null,
-        generation_prefs: post.generation_prefs,
+        generation_prefs: post.generation_prefs ?? null,
       }}
       sources={(orderedSources ?? []).map((s) => ({
         id: s!.id,

@@ -159,6 +159,7 @@ export function PostEditor({
   );
   const [mobileStep, setMobileStep] = useState<MobileStep>("draft");
   const [title, setTitle] = useState(post.title);
+  const [status, setStatus] = useState(post.status);
   const [slug, setSlug] = useState(post.slug);
   const [seoTitle, setSeoTitle] = useState(post.seo_title ?? post.title);
   const [metaDescription, setMetaDescription] = useState(post.meta_description ?? "");
@@ -189,6 +190,10 @@ export function PostEditor({
 
   const igStorage = contentLocale === "zh-HK" ? "zh" : "en";
   const igAspect = variants[igStorage].extra.aspect ?? "square";
+
+  useEffect(() => {
+    setStatus(post.status);
+  }, [post.status]);
 
   useEffect(() => {
     setLocalSuggestions(suggestions);
@@ -272,7 +277,7 @@ export function PostEditor({
     }
   }
 
-  function run(fn: () => Promise<void>) {
+  function run(fn: () => Promise<void>, options?: { refresh?: boolean }) {
     if (demoMode) {
       notify("Demo only — connect Supabase to save.", true);
       return;
@@ -281,7 +286,9 @@ export function PostEditor({
       try {
         setMessage(null);
         await fn();
-        router.refresh();
+        if (options?.refresh !== false) {
+          router.refresh();
+        }
       } catch (e) {
         notify(e instanceof Error ? e.message : "Something went wrong", true);
       }
@@ -467,9 +474,9 @@ export function PostEditor({
             </div>
           </div>
           <span
-            className={`studio-status ${post.status === "published" ? "studio-status-published" : ""}`}
+            className={`studio-status ${status === "published" ? "studio-status-published" : ""}`}
           >
-            {post.status === "published" ? "Published" : "Draft"}
+            {status === "published" ? "Published" : "Draft"}
           </span>
         </div>
         <div className="studio-editor-topbar-actions">
@@ -500,25 +507,29 @@ export function PostEditor({
             className="studio-btn studio-btn-primary"
             disabled={pending || deleting}
             onClick={() =>
-              run(async () => {
-                const result = await publishToSite({
-                  id: post.id,
-                  title,
-                  slug,
-                  my_take: myTake,
-                  body,
-                  body_language: lang,
-                  seo_title: seoTitle,
-                  meta_description: metaDescription,
-                  category: category || null,
-                });
-                if (!result.ok) {
-                  notify(result.error, true);
-                  return;
-                }
-                const url = `${window.location.origin}/p/${result.slug}`;
-                notify(`Published. ${url}`);
-              })
+              run(
+                async () => {
+                  const result = await publishToSite({
+                    id: post.id,
+                    title,
+                    slug,
+                    my_take: myTake,
+                    body,
+                    body_language: lang,
+                    seo_title: seoTitle,
+                    meta_description: metaDescription,
+                    category: category || null,
+                  });
+                  if (!result.ok) {
+                    notify(result.error, true);
+                    return;
+                  }
+                  setStatus("published");
+                  const url = `${window.location.origin}/p/${result.slug}`;
+                  notify(`Published. ${url}`);
+                },
+                { refresh: false },
+              )
             }
           >
             Publish
