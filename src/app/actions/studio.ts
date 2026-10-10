@@ -286,20 +286,41 @@ export async function publishToSite(input: {
   seo_title: string;
   meta_description: string;
   category?: PostCategory | null;
+  key_point?: string;
+  social_title?: string;
+  social_captions?: { zh?: string; en?: string };
 }): Promise<SavePostResult & { slug?: string }> {
-  const blocked = publishBlockReason(input.slug, input.seo_title, input.meta_description);
-  if (blocked) return { ok: false, error: blocked };
-  const saved = await savePost({
-    ...input,
-    status: "published",
-    seo_title: input.seo_title,
-    meta_description: input.meta_description,
-    category: input.category,
-  });
-  if (!saved.ok) return saved;
-  revalidatePath("/p");
-  revalidatePath(publicPostPath(input.slug));
-  return { ok: true, slug: input.slug };
+  try {
+    const blocked = publishBlockReason(input.slug, input.seo_title, input.meta_description);
+    if (blocked) return { ok: false, error: blocked };
+    const saved = await savePost({
+      ...input,
+      status: "published",
+      seo_title: input.seo_title,
+      meta_description: input.meta_description,
+      category: input.category,
+    });
+    if (!saved.ok) return saved;
+
+    const supabase = await requireAdmin();
+    const { data: row } = await supabase
+      .from("studio_posts")
+      .select("status, my_take")
+      .eq("id", input.id)
+      .maybeSingle();
+    if (!row || row.status !== "published") {
+      return {
+        ok: false,
+        error: "Publish did not stick — the post is still a draft. Try again or check your connection.",
+      };
+    }
+
+    revalidatePath("/p");
+    revalidatePath(publicPostPath(input.slug));
+    return { ok: true, slug: input.slug };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Publish failed." };
+  }
 }
 
 export async function savePost(input: {
@@ -384,7 +405,7 @@ export async function savePost(input: {
       body_language: input.body_language,
     });
     if (versionErr) {
-      return { ok: false, error: `Saved post but version history failed: ${versionErr.message}` };
+      console.error("[studio] version history insert failed:", versionErr.message);
     }
 
     revalidatePath(`/studio/posts/${input.id}`);
@@ -643,34 +664,44 @@ export async function generateVariantFromBlogAction(
   postId: string,
   channel: SuggestionChannel,
   prefsInput?: PostGenerationPrefs,
-) {
-  if (channel === "blog") throw new Error("Use blog tab only");
-  const supabase = await requireAdmin();
-  const { data: post } = await supabase.from("studio_posts").select("*").eq("id", postId).single();
-  if (!post) throw new Error("Post not found");
+): Promise<ActionResult> {
+  try {
+    if (channel === "blog") return { ok: false, error: "Use the blog tab for blog drafts." };
+    const supabase = await requireAdmin();
+    const { data: post } = await supabase.from("studio_posts").select("*").eq("id", postId).single();
+    if (!post) return { ok: false, error: "Post not found." };
 
-  const prefs = normalizeGenerationPrefs(prefsInput ?? post.generation_prefs);
-  await saveGenerationPrefs(postId, prefs);
+    const prefs = normalizeGenerationPrefs(prefsInput ?? post.generation_prefs);
+    await saveGenerationPrefs(postId, prefs);
 
-  const generated = await generateVariantFromBlog({
-    channel,
-    postTitle: post.title,
-    blogBody: stripSourcesSection(post.body as string),
-    language: post.body_language as "zh-HK" | "en",
-    prefs,
-  });
+    const blogBody = stripSourcesSection(post.body as string);
+    if (!blogBody.trim()) {
+      return { ok: false, error: "Write or draft the blog body first, then generate from blog." };
+    }
 
-  const { error: sugErr } = await supabase.from("studio_suggestions").insert({
-    post_id: postId,
-    source_id: null,
-    paragraph: generated.content,
-    status: "pending",
-    label: "Generated from blog",
-    channel,
-    extra: generated.extra ?? {},
-  });
-  if (sugErr) throw new Error(sugErr.message);
-  revalidatePath(`/studio/posts/${postId}`);
+    const generated = await generateVariantFromBlog({
+      channel,
+      postTitle: post.title,
+      blogBody,
+      language: post.body_language as "zh-HK" | "en",
+      prefs,
+    });
+
+    const { error: sugErr } = await supabase.from("studio_suggestions").insert({
+      post_id: postId,
+      source_id: null,
+      paragraph: generated.content,
+      status: "pending",
+      label: "Generated from blog",
+      channel,
+      extra: generated.extra ?? {},
+    });
+    if (sugErr) return { ok: false, error: sugErr.message };
+    revalidatePath(`/studio/posts/${postId}`);
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Generate from blog failed." };
+  }
 }
 
 export async function quickAdjustVariantAction(

@@ -42,6 +42,11 @@ export function LoginForm() {
         return;
       }
 
+      if (!data.session?.user) {
+        setFormError("Email or password is incorrect.");
+        return;
+      }
+
       if (!isAdminSession(data.user, getAdminEmail())) {
         await supabase.auth.signOut();
         setFormError("This account isn't allowed to use Content Studio.");
@@ -128,6 +133,11 @@ export function LoginForm() {
             required
           />
         </label>
+        {formError && (
+          <p className="login-form-error" role="alert">
+            {formError}
+          </p>
+        )}
         <button
           type="submit"
           disabled={loading}

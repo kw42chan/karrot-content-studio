@@ -38,7 +38,7 @@ export default async function StudioPostPage({
 
   const { data: suggestions } = await supabase
     .from("studio_suggestions")
-    .select("id, paragraph, source_id, label, channel")
+    .select("id, paragraph, source_id, label, channel, extra")
     .eq("post_id", id)
     .eq("status", "pending");
 
@@ -106,6 +106,12 @@ export default async function StudioPostPage({
         source_id: s.source_id,
         label: s.label ?? undefined,
         channel: (s.channel as import("@/lib/studio/channels").SuggestionChannel) ?? "blog",
+        extra:
+          (s.extra as {
+            social_title?: string;
+            key_point?: string;
+            thread_parts?: string[];
+          } | null) ?? undefined,
       }))}
       comments={comments ?? []}
       variants={variants}

@@ -7,6 +7,7 @@ export type StudioListPost = {
   id: string;
   title: string;
   slug: string;
+  searchText?: string;
   status: "draft" | "published";
   updated_at: string;
   channels: ("blog" | "x" | "threads" | "instagram")[];
@@ -34,7 +35,8 @@ export function PostsList({
       if (filter !== "all" && p.status !== filter) return false;
       if (!query.trim()) return true;
       const q = query.toLowerCase();
-      return p.title.toLowerCase().includes(q) || p.slug.toLowerCase().includes(q);
+      const haystack = (p.searchText ?? `${p.title} ${p.slug}`).toLowerCase();
+      return p.title.toLowerCase().includes(q) || p.slug.toLowerCase().includes(q) || haystack.includes(q);
     });
   }, [posts, query, filter]);
 

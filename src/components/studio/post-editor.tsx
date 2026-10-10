@@ -64,6 +64,7 @@ export type EditorSuggestion = {
   source_id: string | null;
   label?: string;
   channel?: SuggestionChannel;
+  extra?: { social_title?: string; key_point?: string; thread_parts?: string[] };
 };
 
 export type EditorComment = {
@@ -152,7 +153,11 @@ export function PostEditor({
 }) {
   const router = useRouter();
   const studioNav = useStudioNav();
-  const [pending, start] = useTransition();
+  const [, start] = useTransition();
+  const [working, setWorking] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [publishing, setPublishing] = useState(false);
+  const actionLocked = working || saving || publishing;
   const [activeChannel, setActiveChannel] = useState<DistributionChannel>(initialChannel);
   const [contentLocale, setContentLocale] = useState<ContentLocale>(
     initialLocale ?? post.body_language,
@@ -194,6 +199,10 @@ export function PostEditor({
   useEffect(() => {
     setStatus(post.status);
   }, [post.status]);
+
+  useEffect(() => {
+    setMyTake(post.my_take);
+  }, [post.my_take]);
 
   useEffect(() => {
     setLocalSuggestions(suggestions);
@@ -277,21 +286,42 @@ export function PostEditor({
     }
   }
 
-  function run(fn: () => Promise<void>, options?: { refresh?: boolean }) {
+  function safeRefresh() {
+    try {
+      router.refresh();
+    } catch {
+      // Keep the editor usable if RSC refresh fails.
+    }
+  }
+
+  async function run(fn: () => Promise<void>, options?: { refresh?: boolean }) {
     if (demoMode) {
       notify("Demo only — connect Supabase to save.", true);
       return;
     }
-    start(async () => {
-      try {
-        setMessage(null);
-        await fn();
-        if (options?.refresh !== false) {
-          router.refresh();
-        }
-      } catch (e) {
-        notify(e instanceof Error ? e.message : "Something went wrong", true);
+    setWorking(true);
+    try {
+      setMessage(null);
+      await fn();
+      if (options?.refresh) {
+        safeRefresh();
       }
+    } catch (e) {
+      notify(e instanceof Error ? e.message : "Something went wrong", true);
+    } finally {
+      setWorking(false);
+    }
+  }
+
+  async function runGenerateFromBlog(channel: "x" | "threads" | "zh" | "en") {
+    await run(async () => {
+      const result = await generateVariantFromBlogAction(post.id, channel, generationPrefs);
+      if (!result.ok) {
+        notify(result.error, true);
+        return;
+      }
+      notify("Generated from blog — review the suggestion below.");
+      safeRefresh();
     });
   }
 
@@ -328,16 +358,36 @@ export function PostEditor({
 
 
   async function acceptSuggestion(id: string, editedText?: string) {
+    const sug = localSuggestions.find((s) => s.id === id);
     const result = await resolveSuggestion(id, "accept", editedText);
     if (!result.ok) {
       notify(result.error, true);
       return;
     }
+    setLocalSuggestions((list) => list.filter((s) => s.id !== id));
     if (result.body) {
       setBody(result.body);
     }
+    const channel = result.channel ?? sug?.channel ?? "blog";
+    if (channel === "zh" || channel === "en") {
+      const paragraph = editedText ?? sug?.paragraph ?? "";
+      const fromSug = sug?.extra;
+      setVariants((v) => ({
+        ...v,
+        [channel]: {
+          ...v[channel],
+          content: paragraph,
+          extra: {
+            ...v[channel].extra,
+            social_title: fromSug?.social_title ?? v[channel].extra.social_title ?? title,
+            key_point: fromSug?.key_point ?? v[channel].extra.key_point ?? "",
+          },
+        },
+      }));
+      setOgTick((t) => t + 1);
+    }
     const isDraftAccept =
-      result.channel === "blog" &&
+      channel === "blog" &&
       (result.label === "Draft from sources" ||
         result.label === "Make shorter" ||
         result.label === "Make longer" ||
@@ -346,6 +396,7 @@ export function PostEditor({
       await fillSeoFromBody(stripSourcesForEditor(result.body), true);
     } else {
       notify("Suggestion applied.");
+      safeRefresh();
     }
   }
 
@@ -355,16 +406,18 @@ export function PostEditor({
       notify(result.error, true);
       return;
     }
+    setLocalSuggestions((list) => list.filter((s) => s.id !== id));
   }
 
   function runQuickAdjust(adjust: "shorter" | "longer" | "more_detail") {
-    run(async () => {
+    void run(async () => {
       const result = await quickAdjustVariantAction(post.id, draftChannel(), adjust, generationPrefs);
       if (!result.ok) {
         notify(result.error, true);
         return;
       }
       notify("Suggestion ready — review it below.");
+      safeRefresh();
     });
   }
 
@@ -373,7 +426,8 @@ export function PostEditor({
       notify("Demo only — connect Supabase to save.", true);
       return;
     }
-    start(async () => {
+    setSaving(true);
+    try {
       if (activeChannel === "blog") {
         const result = await savePost({
           id: post.id,
@@ -382,7 +436,7 @@ export function PostEditor({
           my_take: myTake,
           body,
           body_language: lang,
-          status: post.status,
+          status,
           key_point: variants.zh.extra.key_point,
           social_title: variants.zh.extra.social_title,
           social_captions: { zh: variants.zh.content, en: variants.en.content },
@@ -409,8 +463,46 @@ export function PostEditor({
         }
       }
       notify("Saved");
-      router.refresh();
-    });
+      safeRefresh();
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handlePublish() {
+    if (demoMode) {
+      notify("Demo only — connect Supabase to save.", true);
+      return;
+    }
+    setPublishing(true);
+    setMessage(null);
+    try {
+      const result = await publishToSite({
+        id: post.id,
+        title,
+        slug,
+        my_take: myTake,
+        body,
+        body_language: lang,
+        seo_title: seoTitle,
+        meta_description: metaDescription,
+        category: category || null,
+        key_point: variants.zh.extra.key_point,
+        social_title: variants.zh.extra.social_title,
+        social_captions: { zh: variants.zh.content, en: variants.en.content },
+      });
+      if (!result.ok) {
+        notify(result.error, true);
+        return;
+      }
+      setStatus("published");
+      const url = `${window.location.origin}/p/${result.slug}`;
+      notify(`Published. ${url}`);
+    } catch (e) {
+      notify(e instanceof Error ? e.message : "Publish failed.", true);
+    } finally {
+      setPublishing(false);
+    }
   }
 
   function copyText(text: string) {
@@ -488,16 +580,16 @@ export function PostEditor({
           </Link>
           <button
             type="button"
-            disabled={pending}
+            disabled={actionLocked}
             className="studio-btn studio-btn-ghost hidden xs:inline-flex"
-            onClick={handleSave}
+            onClick={() => void handleSave()}
           >
-            Save
+            {saving ? "Saving…" : "Save"}
           </button>
           <button
             type="button"
             className="studio-btn studio-btn-danger sm:hidden"
-            disabled={pending || deleting || demoMode}
+            disabled={actionLocked || deleting || demoMode}
             onClick={() => void handleDeletePost()}
           >
             {deleting ? "Deleting…" : "Delete"}
@@ -505,34 +597,10 @@ export function PostEditor({
           <button
             type="button"
             className="studio-btn studio-btn-primary"
-            disabled={pending || deleting}
-            onClick={() =>
-              run(
-                async () => {
-                  const result = await publishToSite({
-                    id: post.id,
-                    title,
-                    slug,
-                    my_take: myTake,
-                    body,
-                    body_language: lang,
-                    seo_title: seoTitle,
-                    meta_description: metaDescription,
-                    category: category || null,
-                  });
-                  if (!result.ok) {
-                    notify(result.error, true);
-                    return;
-                  }
-                  setStatus("published");
-                  const url = `${window.location.origin}/p/${result.slug}`;
-                  notify(`Published. ${url}`);
-                },
-                { refresh: false },
-              )
-            }
+            disabled={actionLocked || deleting}
+            onClick={() => void handlePublish()}
           >
-            Publish
+            {publishing ? "Publishing…" : "Publish"}
           </button>
         </div>
       </header>
@@ -754,9 +822,7 @@ export function PostEditor({
                 charCount={xChars}
                 onCopy={() => copyText(variants.x.content)}
                 showGenerate={showGenerateEmpty}
-                onGenerate={() =>
-                  run(() => generateVariantFromBlogAction(post.id, "x", generationPrefs))
-                }
+                onGenerate={() => void runGenerateFromBlog("x")}
                 channel="x"
                 generationPrefs={generationPrefs}
                 onPrefsChange={persistGenerationPrefs}
@@ -776,9 +842,7 @@ export function PostEditor({
                 charCount={threadsChars}
                 onCopy={() => copyText(variants.threads.content)}
                 showGenerate={showGenerateEmpty}
-                onGenerate={() =>
-                  run(() => generateVariantFromBlogAction(post.id, "threads", generationPrefs))
-                }
+                onGenerate={() => void runGenerateFromBlog("threads")}
                 channel="threads"
                 generationPrefs={generationPrefs}
                 onPrefsChange={persistGenerationPrefs}
@@ -797,11 +861,7 @@ export function PostEditor({
                     <button
                       type="button"
                       className="studio-btn studio-btn-primary"
-                      onClick={() =>
-                        run(() =>
-                          generateVariantFromBlogAction(post.id, igStorage, generationPrefs),
-                        )
-                      }
+                      onClick={() => void runGenerateFromBlog(igStorage)}
                     >
                       Generate from blog
                     </button>
@@ -856,11 +916,7 @@ export function PostEditor({
                     <button
                       type="button"
                       className="studio-btn studio-btn-primary h-8 text-xs"
-                      onClick={() =>
-                        run(() =>
-                          generateVariantFromBlogAction(post.id, igStorage, generationPrefs),
-                        )
-                      }
+                      onClick={() => void runGenerateFromBlog(igStorage)}
                     >
                       Regenerate from blog
                     </button>
@@ -923,7 +979,7 @@ export function PostEditor({
             a.click();
           }}
           demoMode={demoMode}
-          pending={pending}
+          pending={actionLocked}
           onDraftFromSources={() =>
             run(() => draftPostWithAi(post.id, draftChannel(), generationPrefs))
           }

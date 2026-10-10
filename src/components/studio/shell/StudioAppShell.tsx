@@ -151,16 +151,20 @@ function AccountFoot({
 }) {
   return (
     <div className="studio-sidebar-foot">
-      <img src={AVATAR} alt="" className="studio-avatar" width={32} height={32} />
-      <div className="studio-acct">
-        <b>Darwin Chan</b>
-        <span>{email ?? "…"}</span>
+      <div className="studio-sidebar-account">
+        <img src={AVATAR} alt="" className="studio-avatar" width={32} height={32} />
+        <div className="studio-acct">
+          <b>Darwin Chan</b>
+          <span>{email ?? "…"}</span>
+        </div>
       </div>
-      {!demoMode && email && <ChangePasswordForm email={email} />}
-      {!demoMode && (
-        <button type="button" className="studio-signout" onClick={onSignOut}>
-          Sign out
-        </button>
+      {!demoMode && email && (
+        <div className="studio-sidebar-account-actions">
+          <ChangePasswordForm email={email} />
+          <button type="button" className="studio-signout" onClick={onSignOut}>
+            Sign out
+          </button>
+        </div>
       )}
     </div>
   );
