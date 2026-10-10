@@ -3,9 +3,9 @@ import { AUTHOR_AVATAR_URL, AUTHOR_NAME } from "@/lib/blog/constants";
 import {
   formatPostDateUpper,
   postCardExcerpt,
-  postDisplayTitle,
   readTimeLabel,
 } from "@/lib/blog/format";
+import { publicArticleHeadline } from "@/lib/blog/public-posts";
 import type { KeyPoint, PublicBlogPost } from "@/lib/blog/types";
 import Link from "next/link";
 
@@ -14,7 +14,11 @@ export function BlogFeatured({ post }: { post: PublicBlogPost }) {
   const showGuide = keyPoints.length > 0;
 
   return (
-    <Link className="featured" href={`/p/${post.slug}`} aria-label={`Read: ${postDisplayTitle(post)}`}>
+    <Link
+      className="featured"
+      href={`/p/${post.slug}`}
+      aria-label={`Read: ${publicArticleHeadline(post)}`}
+    >
       <div className="watermark" aria-hidden="true" />
       <div className="featured-main">
         <div className="featured-tags">
@@ -22,7 +26,7 @@ export function BlogFeatured({ post }: { post: PublicBlogPost }) {
           {post.category && <span className="tag-cat">{categoryLabel(post.category)}</span>}
         </div>
         <h2 className="h-anton" lang={post.body_language === "zh-HK" ? "zh-Hant-HK" : "en"}>
-          {postDisplayTitle(post)}
+          {publicArticleHeadline(post)}
         </h2>
         <p className="fdek" lang={post.body_language === "zh-HK" ? "zh-Hant-HK" : "en"}>
           {postCardExcerpt(post)}

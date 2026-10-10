@@ -4,10 +4,10 @@ import { AUTHOR_AVATAR_URL, AUTHOR_NAME, BLOG_TAGLINE } from "@/lib/blog/constan
 import {
   formatPostDateUpper,
   postCardExcerpt,
-  postDisplayTitle,
   readTimeLabel,
   stripSourcesSection,
 } from "@/lib/blog/format";
+import { publicArticleHeadline } from "@/lib/blog/public-posts";
 import type { KeyPoint, PublicBlogPost } from "@/lib/blog/types";
 import { marked } from "marked";
 import Link from "next/link";
@@ -15,7 +15,8 @@ import Link from "next/link";
 marked.setOptions({ gfm: true, breaks: true });
 
 export function BlogArticle({ post }: { post: PublicBlogPost }) {
-  const title = postDisplayTitle(post);
+  const title = publicArticleHeadline(post);
+  const shareTitle = post.seo_title?.trim() || title;
   const dek = postCardExcerpt(post);
   const myTake = post.my_take?.trim() ?? "";
   const body = stripSourcesSection(post.body);
@@ -43,7 +44,7 @@ export function BlogArticle({ post }: { post: PublicBlogPost }) {
               </span>
             </div>
           </div>
-          <BlogShare title={title} slug={post.slug} />
+          <BlogShare title={shareTitle} slug={post.slug} />
         </div>
       </header>
 

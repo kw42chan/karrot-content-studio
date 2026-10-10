@@ -24,7 +24,12 @@ export function StudioAppShell({
   const router = useRouter();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [email, setEmail] = useState<string | null>(null);
-  const { newPost: createNewPost, pending: newPostPending } = useNewPost(demoMode);
+  const {
+    newPost: createNewPost,
+    pending: newPostPending,
+    error: newPostError,
+    clearError: clearNewPostError,
+  } = useNewPost(demoMode);
 
   useEffect(() => {
     if (demoMode) {
@@ -100,15 +105,31 @@ export function StudioAppShell({
       </aside>
 
       {drawerOpen && (
-        <div className="studio-drawer-backdrop md:hidden" onClick={() => setDrawerOpen(false)} />
+        <>
+          <div
+            className="studio-drawer-backdrop md:hidden"
+            onClick={() => setDrawerOpen(false)}
+            aria-hidden="true"
+          />
+          <aside className="studio-drawer open md:hidden" aria-label="Menu">
+            <Brand />
+            <nav className="nav-stack">{nav}</nav>
+            <AccountFoot email={email} onSignOut={signOut} demoMode={demoMode} />
+          </aside>
+        </>
       )}
-      <aside className={`studio-drawer ${drawerOpen ? "open" : ""}`} aria-label="Menu">
-        <Brand />
-        <nav className="nav-stack">{nav}</nav>
-        <AccountFoot email={email} onSignOut={signOut} demoMode={demoMode} />
-      </aside>
 
-      <div className="studio-main">{children}</div>
+      <div className="studio-main">
+        {newPostError && (
+          <div className="studio-inline-alert" role="alert">
+            <span>{newPostError}</span>
+            <button type="button" className="studio-inline-alert-dismiss" onClick={clearNewPostError}>
+              Dismiss
+            </button>
+          </div>
+        )}
+        {children}
+      </div>
 
       <nav className="studio-bottom-bar" aria-label="Primary">
         <Link href={postsHref} className={isPosts ? "active" : ""}>Posts</Link>
