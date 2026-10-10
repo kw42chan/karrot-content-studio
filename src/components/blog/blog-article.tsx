@@ -8,7 +8,7 @@ import {
   readTimeLabel,
   stripSourcesSection,
 } from "@/lib/blog/format";
-import type { PublicBlogPost } from "@/lib/blog/types";
+import type { KeyPoint, PublicBlogPost } from "@/lib/blog/types";
 import { marked } from "marked";
 import Link from "next/link";
 
@@ -21,6 +21,7 @@ export function BlogArticle({ post }: { post: PublicBlogPost }) {
   const body = stripSourcesSection(post.body);
   const html = marked.parse(body) as string;
   const lang = post.body_language === "zh-HK" ? "zh-Hant-HK" : "en";
+  const keyPoints = (post.key_points ?? []) as KeyPoint[];
 
   return (
     <article>
@@ -45,6 +46,25 @@ export function BlogArticle({ post }: { post: PublicBlogPost }) {
           <BlogShare title={title} slug={post.slug} />
         </div>
       </header>
+
+      {keyPoints.length > 0 && (
+        <section className="in-guide post-in-guide" lang={lang} aria-labelledby="post-guide-label">
+          <div className="eyebrow" id="post-guide-label">
+            In this guide
+          </div>
+          <ol>
+            {keyPoints.slice(0, 5).map((kp, i) => (
+              <li key={i}>
+                <span className="n">{String(i + 1).padStart(2, "0")}</span>
+                <span>
+                  {kp.title}
+                  {kp.subtitle ? <small>{kp.subtitle}</small> : null}
+                </span>
+              </li>
+            ))}
+          </ol>
+        </section>
+      )}
 
       {myTake && (
         <section className="post-my-take" aria-labelledby="post-my-take-label">

@@ -8,7 +8,7 @@ import {
   withSlugSuffix,
 } from "@/lib/posts/seo-slug";
 
-const META_MAX = 155;
+const META_MAX = 160;
 
 export type ResolvePublishInput = {
   title: string;
@@ -28,10 +28,31 @@ export type ResolvedPublishFields = {
   metaDescription: string;
 };
 
-function clampMeta(text: string): string {
+export function clampMeta(text: string): string {
   const one = text.replace(/\s+/g, " ").trim();
   if (one.length <= META_MAX) return one;
-  return `${one.slice(0, META_MAX - 1).trim()}…`;
+
+  const window = one.slice(0, META_MAX + 1);
+  const sentenceBreak = Math.max(
+    window.lastIndexOf(". "),
+    window.lastIndexOf("! "),
+    window.lastIndexOf("? "),
+    window.lastIndexOf("。"),
+    window.lastIndexOf("！"),
+    window.lastIndexOf("？"),
+  );
+  if (sentenceBreak >= Math.floor(META_MAX * 0.45)) {
+    const cut = window.slice(0, sentenceBreak + 1).trim();
+    if (cut.length >= 40) return cut;
+  }
+
+  const wordCap = one.slice(0, META_MAX);
+  const lastSpace = wordCap.lastIndexOf(" ");
+  if (lastSpace >= Math.floor(META_MAX * 0.55)) {
+    return wordCap.slice(0, lastSpace).trim();
+  }
+
+  return wordCap.trim();
 }
 
 function stripMarkdownForExcerpt(body: string): string {

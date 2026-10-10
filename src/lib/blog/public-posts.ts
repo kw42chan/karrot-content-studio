@@ -105,6 +105,9 @@ export function isUsableCoverUrl(url: string | null | undefined): boolean {
 }
 
 const COVER_WORD_MAX = 8;
+const CJK_COVER_MAX = 10;
+
+const CJK_RUN = /[\u4e00-\u9fff\u3400-\u4dbf\uf900-\ufaff]/;
 
 function fitCoverWords(display: string, maxLen: number): string {
   const words = display.split(/\s+/).filter(Boolean);
@@ -117,7 +120,27 @@ function fitCoverWords(display: string, maxLen: number): string {
   }
   if (out.length <= maxLen) return out;
   if (words[0].length <= maxLen) return words[0];
-  return words[0].slice(0, maxLen);
+  return words[0];
+}
+
+function leadingCjkRun(display: string): string | null {
+  const trimmed = display.trim();
+  let run = "";
+  for (const ch of trimmed) {
+    if (CJK_RUN.test(ch)) run += ch;
+    else break;
+  }
+  return run.length >= 2 ? run : null;
+}
+
+function firstCjkRun(display: string): string | null {
+  const m = display.match(/[\u4e00-\u9fff\u3400-\u4dbf\uf900-\ufaff]+/);
+  return m && m[0].length >= 2 ? m[0] : null;
+}
+
+function leadingLatinWord(display: string): string | null {
+  const m = display.trim().match(/^([A-Za-z][A-Za-z0-9]*)/);
+  return m ? m[1] : null;
 }
 
 export function coverWordForPost(post: PublicBlogPost): string {
@@ -125,13 +148,18 @@ export function coverWordForPost(post: PublicBlogPost): string {
   if (/harness/i.test(display) && /engineering/i.test(display)) {
     return "Harness\nEngineering";
   }
-  if (post.body_language === "zh-HK") {
-    const compact = display.replace(/\s/g, "");
-    const latinLead = compact.match(/^[A-Za-z]{4,}/);
-    if (latinLead) return latinLead[0].slice(0, 10);
-    const cjkMax = 10;
-    if (compact.length <= cjkMax) return compact || "帳號安全";
-    return compact.slice(0, cjkMax);
+
+  const cjk =
+    leadingCjkRun(display) ??
+    (post.body_language === "zh-HK" ? firstCjkRun(display) : null);
+  if (cjk) {
+    return cjk.length <= CJK_COVER_MAX ? cjk : cjk.slice(0, CJK_COVER_MAX);
   }
+
+  const latin = leadingLatinWord(display);
+  if (latin && latin.length >= 4) {
+    return latin.length <= COVER_WORD_MAX ? latin : latin.slice(0, COVER_WORD_MAX);
+  }
+
   return fitCoverWords(display, COVER_WORD_MAX);
 }

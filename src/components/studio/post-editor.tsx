@@ -111,31 +111,46 @@ type VariantState = Record<"x" | "threads" | "zh" | "en", PostVariantRecord>;
 
 type MobileStep = "sources" | "draft" | "settings";
 
+function canonicalKeyPoint(post: EditorPost): string {
+  return post.key_point?.trim() ?? "";
+}
+
+function withCanonicalKeyPoint(
+  row: PostVariantRecord | undefined,
+  post: EditorPost,
+  fallback: PostVariantRecord,
+): PostVariantRecord {
+  const kp = canonicalKeyPoint(post);
+  if (!row) return { ...fallback, extra: { ...fallback.extra, key_point: kp } };
+  return { ...row, extra: { ...row.extra, key_point: kp } };
+}
+
 function buildInitialVariants(
   post: EditorPost,
   fromDb: Partial<VariantState>,
 ): VariantState {
+  const kp = canonicalKeyPoint(post);
   return {
     x: fromDb.x ?? { channel: "x", content: "", extra: { thread_parts: [] } },
     threads: fromDb.threads ?? { channel: "threads", content: "", extra: {} },
-    zh: fromDb.zh ?? {
+    zh: withCanonicalKeyPoint(fromDb.zh, post, {
       channel: "zh",
       content: post.social_captions?.zh ?? "",
       extra: {
         social_title: post.social_title ?? post.title,
-        key_point: post.key_point ?? "",
+        key_point: kp,
         aspect: "square",
       },
-    },
-    en: fromDb.en ?? {
+    }),
+    en: withCanonicalKeyPoint(fromDb.en, post, {
       channel: "en",
       content: post.social_captions?.en ?? "",
       extra: {
         social_title: post.social_title ?? post.title,
-        key_point: post.key_point ?? "",
+        key_point: kp,
         aspect: "square",
       },
-    },
+    }),
   };
 }
 
@@ -186,6 +201,7 @@ export function PostEditor({
   const [myTake, setMyTake] = useState(post.my_take);
   const [body, setBody] = useState(post.body);
   const [lang, setLang] = useState(post.body_language);
+  const [keyPoint, setKeyPointState] = useState(() => canonicalKeyPoint(post));
   const [variants, setVariants] = useState<VariantState>(() =>
     buildInitialVariants(post, initialVariantsFromDb),
   );
@@ -227,8 +243,19 @@ export function PostEditor({
     setComments(initialComments);
   }, [initialComments]);
   useEffect(() => {
+    setKeyPointState(canonicalKeyPoint(post));
     setVariants(buildInitialVariants(post, initialVariantsFromDb));
   }, [initialVariantsFromDb, post]);
+
+  function setKeyPoint(value: string) {
+    setKeyPointState(value);
+    setVariants((v) => ({
+      ...v,
+      zh: { ...v.zh, extra: { ...v.zh.extra, key_point: value } },
+      en: { ...v.en, extra: { ...v.en.extra, key_point: value } },
+    }));
+    setOgTick((t) => t + 1);
+  }
 
   useEffect(() => {
     if (activeChannel === "blog") {
@@ -254,7 +281,7 @@ export function PostEditor({
   }
 
   const ogTitle = imageHeadlineForLocale(igStorage);
-  const ogKey = variants[igStorage].extra.key_point ?? "";
+  const ogKey = keyPoint;
   const socialTitleEnc = encodeURIComponent(ogTitle);
   const socialKeyEnc = encodeURIComponent(ogKey);
   const squareOg = `/api/og/social?title=${socialTitleEnc}&keyPoint=${socialKeyEnc}&format=square&v=${ogTick}`;
@@ -360,7 +387,12 @@ export function PostEditor({
 
   async function runGenerateFromBlog(channel: "x" | "threads" | "zh" | "en") {
     await run(async () => {
-      const result = await generateVariantFromBlogAction(post.id, channel, generationPrefs);
+      const result = await generateVariantFromBlogAction(
+        post.id,
+        channel,
+        generationPrefs,
+        contentLocale,
+      );
       if (!result.ok) {
         notify(result.error, true);
         return;
@@ -438,12 +470,15 @@ export function PostEditor({
             ...(channel === "zh" || channel === "en"
               ? {
                   social_title: fromSug?.social_title ?? v[channel].extra.social_title ?? title,
-                  key_point: fromSug?.key_point ?? v[channel].extra.key_point ?? "",
+                  key_point: v[channel].extra.key_point ?? "",
                 }
               : {}),
           },
         },
       }));
+      if (fromSug?.key_point?.trim() && (channel === "zh" || channel === "en")) {
+        setKeyPoint(fromSug.key_point.trim());
+      }
       if (channel === "zh" || channel === "en") setOgTick((t) => t + 1);
     }
     const isDraftAccept =
@@ -517,7 +552,7 @@ export function PostEditor({
           body,
           body_language: lang,
           status,
-          key_point: variants.zh.extra.key_point,
+          key_point: keyPoint,
           social_title: variants.zh.extra.social_title,
           social_captions: { zh: variants.zh.content, en: variants.en.content },
           seo_title: seoTitle,
@@ -590,7 +625,7 @@ export function PostEditor({
         seo_title: resolved.seoTitle,
         meta_description: resolved.metaDescription,
         category: category || null,
-        key_point: variants.zh.extra.key_point,
+        key_point: keyPoint,
         social_title: variants.zh.extra.social_title,
         social_captions: { zh: variants.zh.content, en: variants.en.content },
         status,
@@ -1009,10 +1044,8 @@ export function PostEditor({
                     <label className="studio-field mt-3">
                       Key point (Roboto)
                       <input
-                        value={variants[igStorage].extra.key_point ?? ""}
-                        onChange={(e) =>
-                          updateVariant(igStorage, { extra: { key_point: e.target.value } })
-                        }
+                        value={keyPoint}
+                        onChange={(e) => setKeyPoint(e.target.value)}
                       />
                     </label>
                     <div className="my-3 overflow-hidden rounded-lg border border-[var(--karrot-border)]">
@@ -1044,10 +1077,8 @@ export function PostEditor({
                     <label className="studio-field">
                       Key point (Roboto)
                       <input
-                        value={variants[igStorage].extra.key_point ?? ""}
-                        onChange={(e) =>
-                          updateVariant(igStorage, { extra: { key_point: e.target.value } })
-                        }
+                        value={keyPoint}
+                        onChange={(e) => setKeyPoint(e.target.value)}
                       />
                     </label>
                     <label className="mb-1 mt-3 block text-xs font-semibold text-[var(--karrot-muted)]">
@@ -1113,8 +1144,8 @@ export function PostEditor({
           }}
           category={category}
           setCategory={setCategory}
-          keyPoint={variants.zh.extra.key_point ?? ""}
-          setKeyPoint={(v) => updateVariant("zh", { extra: { key_point: v } })}
+          keyPoint={keyPoint}
+          setKeyPoint={setKeyPoint}
           onFillSeo={() => void fillSeoFromBody(stripSourcesForEditor(body))}
           seoFilling={seoFilling}
           publishMode={publishMode}

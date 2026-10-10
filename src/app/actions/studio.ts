@@ -30,6 +30,8 @@ import { generateSeoFields } from "@/lib/ai/seo";
 import { computeReadTimeMinutes } from "@/lib/blog/read-time";
 import { stripSourcesSection } from "@/lib/blog/format";
 import type { PostCategory } from "@/lib/blog/categories";
+import { applyPostLinkToVariant, publicPostUrlForSlug } from "@/lib/ai/variant-link";
+import { keyPointFields } from "@/lib/posts/key-points";
 import { publicPostPath } from "@/lib/posts/site-publish";
 import {
   deriveMetaDescription,
@@ -477,7 +479,7 @@ export async function savePost(input: {
       body: bodyWithSources,
       body_language: input.body_language,
       status: input.status,
-      key_point: input.key_point ?? null,
+      ...keyPointFields(input.key_point),
       social_title: input.social_title ?? null,
       social_captions: input.social_captions ?? null,
       seo_title: input.seo_title ?? null,
@@ -598,17 +600,17 @@ export async function saveVariant(input: {
         .eq("id", input.postId)
         .single();
       const caps = (post?.social_captions as { zh?: string; en?: string }) ?? {};
-      await supabase
-        .from("studio_posts")
-        .update({
-          social_captions: {
-            ...caps,
-            [input.channel === "zh" ? "zh" : "en"]: input.content,
-          },
-          ...(extra.social_title ? { social_title: extra.social_title } : {}),
-          ...(extra.key_point ? { key_point: extra.key_point } : {}),
-        })
-        .eq("id", input.postId);
+      const postPatch: Record<string, unknown> = {
+        social_captions: {
+          ...caps,
+          [input.channel === "zh" ? "zh" : "en"]: input.content,
+        },
+        ...(extra.social_title ? { social_title: extra.social_title } : {}),
+      };
+      if (typeof extra.key_point === "string") {
+        Object.assign(postPatch, keyPointFields(extra.key_point));
+      }
+      await supabase.from("studio_posts").update(postPatch).eq("id", input.postId);
     }
 
     revalidatePath(`/studio/posts/${input.postId}`);
@@ -776,6 +778,7 @@ export async function generateVariantFromBlogAction(
   postId: string,
   channel: SuggestionChannel,
   prefsInput?: PostGenerationPrefs,
+  contentLanguage?: "zh-HK" | "en",
 ): Promise<ActionResult> {
   try {
     if (channel === "blog") return { ok: false, error: "Use the blog tab for blog drafts." };
@@ -791,13 +794,18 @@ export async function generateVariantFromBlogAction(
       return { ok: false, error: "Write or draft the blog body first, then generate from blog." };
     }
 
-    const generated = await generateVariantFromBlog({
+    const language = (contentLanguage ?? post.body_language) as "zh-HK" | "en";
+    const rawGenerated = await generateVariantFromBlog({
       channel,
       postTitle: post.title,
       blogBody,
-      language: post.body_language as "zh-HK" | "en",
+      language,
       prefs,
     });
+    const generated = applyPostLinkToVariant(
+      rawGenerated,
+      publicPostUrlForSlug(post.slug as string),
+    );
 
     const { data: inserted, error: sugErr } = await supabase
       .from("studio_suggestions")
@@ -906,7 +914,7 @@ export async function quickAdjustVariantAction(
         return { ok: false, error: "No content to adjust — generate or draft first." };
       }
 
-      const adjusted = await adjustVariantContent({
+      const adjustedRaw = await adjustVariantContent({
         channel,
         adjust,
         postTitle: post.title,
@@ -916,6 +924,10 @@ export async function quickAdjustVariantAction(
         sources: adjust === "more_detail" ? bundles : undefined,
         prefs,
       });
+      const adjusted =
+        channel === "x" || channel === "threads"
+          ? applyPostLinkToVariant(adjustedRaw, publicPostUrlForSlug(post.slug as string))
+          : adjustedRaw;
 
       const { data: inserted, error: sugErr } = await supabase
         .from("studio_suggestions")
@@ -1016,8 +1028,7 @@ export async function resolveSuggestion(
       const postUpdate: Record<string, unknown> = { body: newBody };
       // Prefer key_points (jsonb) when present; keep key_point for older rows.
       if (extra.key_point) {
-        postUpdate.key_point = extra.key_point;
-        postUpdate.key_points = [extra.key_point];
+        Object.assign(postUpdate, keyPointFields(extra.key_point));
       }
       if (extra.social_captions) postUpdate.social_captions = extra.social_captions;
 
@@ -1057,6 +1068,13 @@ export async function resolveSuggestion(
         .select("post_id")
         .single();
       if (vErr) return { ok: false, error: vErr.message };
+
+      if (extra.key_point) {
+        await supabase
+          .from("studio_posts")
+          .update(keyPointFields(extra.key_point))
+          .eq("id", sug.post_id);
+      }
 
       await supabase.from("studio_post_variant_versions").insert({
         post_id: sug.post_id,

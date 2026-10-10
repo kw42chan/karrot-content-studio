@@ -114,6 +114,48 @@ describe("coverWordForPost", () => {
     expect(word).toBe("QA r4");
   });
 
+  it("prefers leading CJK for mixed titles", () => {
+    expect(
+      coverWordForPost(
+        post({
+          id: "1",
+          title: "中國護照註冊Claude",
+          slug: "china-passport",
+          seo_title: "中國護照註冊Claude",
+          body_language: "zh-HK",
+        }),
+      ),
+    ).toBe("中國護照註冊");
+  });
+
+  it("uses CJK segment when Latin leads on zh posts", () => {
+    expect(
+      coverWordForPost(
+        post({
+          id: "1",
+          title: "Claude帳號安全",
+          slug: "claude-safety",
+          seo_title: "Claude帳號安全",
+          body_language: "zh-HK",
+        }),
+      ),
+    ).toBe("帳號安全");
+  });
+
+  it("keeps spaced Latin words without mid-word chop", () => {
+    expect(
+      coverWordForPost(
+        post({
+          id: "1",
+          title: "QA r6 test A",
+          slug: "qa-r6",
+          seo_title: "QA r6 test A",
+          body_language: "en",
+        }),
+      ),
+    ).toBe("QA r6");
+  });
+
   it("keeps full short CJK title on cover when it fits", () => {
     const word = coverWordForPost(
       post({
@@ -138,6 +180,6 @@ describe("coverWordForPost", () => {
       }),
     );
     expect(word).not.toBe("fdraft");
-    expect(word).toContain("Claude");
+    expect(word).toContain("帳號");
   });
 });

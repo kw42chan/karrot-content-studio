@@ -28,7 +28,16 @@ describe("publish-prep", () => {
       body: "## Intro\n\nThis is the first paragraph of the draft body for testing.",
     });
     expect(meta.length).toBeGreaterThan(10);
-    expect(meta.length).toBeLessThanOrEqual(155);
+    expect(meta.length).toBeLessThanOrEqual(160);
+  });
+
+  it("trims long meta at word boundaries", () => {
+    const body = `${"Word ".repeat(40)}end.`;
+    const meta = deriveMetaDescription({ metaDescription: "", myTake: "", body });
+    expect(meta.length).toBeLessThanOrEqual(160);
+    const lastWord = meta.split(" ").pop() ?? "";
+    expect(lastWord.length).toBeGreaterThan(1);
+    expect(meta).not.toMatch(/…$/);
   });
 
   it("prefers body over My take for meta", () => {

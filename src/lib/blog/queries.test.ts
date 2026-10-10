@@ -20,12 +20,12 @@ function post(partial: Partial<PublicBlogPost> & Pick<PublicBlogPost, "id" | "ti
 }
 
 describe("countByCategory", () => {
-  it("excludes featured post from All count to match the index grid", () => {
+  it("counts all published posts including the featured hero", () => {
     const featured = post({ id: "f", title: "Featured", slug: "featured", category: "automation" });
     const other = post({ id: "o", title: "Other", slug: "other", category: "automation" });
-    const counts = countByCategory([featured, other], "featured");
-    expect(counts.all).toBe(1);
-    expect(counts.automation).toBe(1);
+    const counts = countByCategory([featured, other]);
+    expect(counts.all).toBe(2);
+    expect(counts.automation).toBe(2);
   });
 });
 
