@@ -1,0 +1,74 @@
+{
+  "https://x.com/MagicPower21M/status/2106653640588927234": {
+    "en": {
+      "headline": "how to avoid claude account bans with a dual-layer network setup",
+      "summary": "After being banned six times, the author built a reliable network using a US VPS and static residential IP to access Claude without getting blocked.",
+      "points": [
+        "Used BandwagonHost VPS with CN2 GIA for fast, stable connection to the US.",
+        "Connected to Surflare's AT&T static residential IP for clean, low-risk exit point.",
+        "Configured chain proxy so local devices use VPS as gateway, which then routes traffic through residential IP.",
+        "Achieved 98/100 IP purity score and 12% risk level, with latency around 160–180ms.",
+        "All home devices (Mac, iPhone, router) work seamlessly without changing settings."
+      ]
+    },
+    "zh": {
+      "headline": "連續六次被Claude封號後的最終解決方案",
+      "summary": "作者在被封號六次後，透過搭建搬瓦工VPS加AT&T美國住宅IP的雙層網絡，成功避免再被封號。",
+      "points": [
+        "使用搬瓦工CN2 GIA機房VPS，確保國內連接快速穩定。",
+        "搭配Surflare提供的AT&T美國住宅靜態IP，出口IP純淨度高、風險極低。",
+        "在VPS上設置鏈式代理，本地設備無需更改設定，流量自動轉發至住宅IP。",
+        "測試顯示IP評分達98分，風險值僅12%，延遲約160至180毫秒。",
+        "全屋設備（包括手機、電腦、路由器）均可無感使用，實現透明代理。"
+      ]
+    }
+  },
+  "https://x.com/AYi_AInotes/status/2106639522586829094": {
+    "en": {
+      "headline": "Claude account protection guide for 2026",
+      "summary": "A detailed guide explains how to protect Claude accounts from being banned by managing environment, payment, behavior, and settings.",
+      "points": [
+        "Set device time zone to Taipei and disable automatic time zone setting on both computer and phone.",
+        "Use a dedicated residential IP with ISP type, not hosting, and avoid shared or proxy IPs.",
+        "Enable TUN mode in proxy software to prevent WebRTC and DNS leaks.",
+        "Use one account per device and browser profile, avoid multiple logins or third-party clients.",
+        "Pay via App Store if possible for easier refunds; avoid virtual cards and sudden Max upgrades."
+      ]
+    },
+    "zh": {
+      "headline": "2026年Claude防封實用指南",
+      "summary": "文章詳述如何透過環境、支付、使用行為及設定四層防線，保護Claude帳號免遭封禁。",
+      "points": [
+        "電腦與手機時區設為台北，關閉自動設定時區功能。",
+        "選用獨享住宅IP，確保出口IP類型為ISP而非機房，避免跳節點。",
+        "啟用代理軟體的TUN模式，防止WebRTC和DNS洩漏真實IP。",
+        "一個帳號只限一台設備及一個瀏覽器資料夾使用，避免多帳號登陸或接第三方客戶端。",
+        "付款優先選擇App Store內購以便退款，避免新號直接升級Max或使用虛擬卡。"
+      ]
+    }
+  },
+  "https://www.threads.com/share/EtCKem4fj/": {
+    "en": {
+      "headline": "claude blocks hk users why vpn not clean",
+      "summary": "Claude blocks Hong Kong users not just because of VPN use but due to overall device and network environment.",
+      "points": [
+        "VPN use alone does not guarantee account ban",
+        "Clean IP does not ensure safety from bans",
+        "Claude analyzes device and network environment for fraud detection",
+        "Multiple factors beyond VPN affect account status",
+        "Article explains technical reasons behind bans, not how to avoid them"
+      ]
+    },
+    "zh": {
+      "headline": "Claude 大規模封香港用戶 真係因為你個 VPN唔乾淨",
+      "summary": "Claude 封鎖香港用戶並非單因使用 VPN，而是綜合分析裝置及網絡環境所致。",
+      "points": [
+        "僅使用 VPN 不會直接導致帳號被封",
+        "所謂「乾淨 IP」不代表一定安全",
+        "Claude 會檢測裝置與網絡環境以判斷風險",
+        "帳號狀態受多種因素影響，不限於 VPN",
+        "本文純技術角度解釋封號原因，不提供防封方法"
+      ]
+    }
+  }
+}
