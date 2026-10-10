@@ -3,7 +3,9 @@
 import { GenerationControls } from "@/components/studio/generation-controls";
 import type { ContentLocale, DistributionChannel } from "@/lib/studio/channels";
 import type { EditorPost, EditorVersion } from "@/components/studio/post-editor";
+import { POST_CATEGORIES, categoryLabel, type PostCategory } from "@/lib/blog/categories";
 import type { ChannelGenerationPrefs } from "@/lib/studio/generation-prefs";
+import { formatStudioDateTimeHkt } from "@/lib/format/timestamp";
 
 export function ChannelSettingsPanel({
   channel,
@@ -15,6 +17,16 @@ export function ChannelSettingsPanel({
   setSeoTitle,
   metaDescription,
   setMetaDescription,
+  category,
+  setCategory,
+  keyPoint = "",
+  setKeyPoint,
+  onFillSeo,
+  seoFilling = false,
+  publishMode,
+  setPublishMode,
+  confirmEmail,
+  setConfirmEmail,
   xChars,
   threadsChars,
   threadParts,
@@ -32,8 +44,8 @@ export function ChannelSettingsPanel({
   onGenerationPrefsChange,
   versions,
   onRestoreVersion,
-  onFillSeo,
-  seoFilling = false,
+  onDeletePost,
+  deletePending = false,
 }: {
   channel: DistributionChannel;
   locale: ContentLocale;
@@ -44,6 +56,16 @@ export function ChannelSettingsPanel({
   setSeoTitle: (v: string) => void;
   metaDescription: string;
   setMetaDescription: (v: string) => void;
+  category: PostCategory | "";
+  setCategory: (v: PostCategory | "") => void;
+  keyPoint?: string;
+  setKeyPoint?: (v: string) => void;
+  onFillSeo?: () => void;
+  seoFilling?: boolean;
+  publishMode: "web_only" | "web_and_email";
+  setPublishMode: (v: "web_only" | "web_and_email") => void;
+  confirmEmail: boolean;
+  setConfirmEmail: (v: boolean) => void;
   xChars: number;
   threadsChars: number;
   threadParts: string[];
@@ -61,8 +83,8 @@ export function ChannelSettingsPanel({
   onGenerationPrefsChange: (prefs: ChannelGenerationPrefs) => void;
   versions: EditorVersion[];
   onRestoreVersion: (id: string) => void;
-  onFillSeo?: () => void;
-  seoFilling?: boolean;
+  onDeletePost?: () => void;
+  deletePending?: boolean;
 }) {
   const channelLabel =
     channel === "blog"
@@ -100,6 +122,35 @@ export function ChannelSettingsPanel({
                 readOnly={demoMode}
               />
             </div>
+            <div className="studio-field">
+              <label>Category</label>
+              <select
+                value={category}
+                onChange={(e) => setCategory(e.target.value as PostCategory | "")}
+                disabled={demoMode}
+                className="w-full rounded-lg border border-[var(--karrot-border)] bg-white px-3 py-2 text-sm"
+              >
+                <option value="">— Select —</option>
+                {POST_CATEGORIES.map((c) => (
+                  <option key={c} value={c}>{categoryLabel(c)}</option>
+                ))}
+              </select>
+            </div>
+            {setKeyPoint && (
+              <div className="studio-field">
+                <label>Key point</label>
+                <input
+                  value={keyPoint}
+                  onChange={(e) => setKeyPoint(e.target.value)}
+                  readOnly={demoMode}
+                  placeholder="Short line for /p featured block and social image"
+                />
+              </div>
+            )}
+            <p className="text-xs leading-snug text-[var(--karrot-muted)]">
+              Post cards on <strong>/p</strong> use taupe covers with title words. Custom cover image upload is not
+              available in the studio yet.
+            </p>
             {onFillSeo && (
               <button
                 type="button"
@@ -111,9 +162,37 @@ export function ChannelSettingsPanel({
                 {seoFilling ? "Filling SEO…" : "Fill SEO"}
               </button>
             )}
-            <p className="text-xs leading-relaxed text-[var(--karrot-muted)]">
-              Publish makes this post public at <strong>/p/{slug || "your-slug"}</strong>.
-            </p>
+            <div className="studio-field">
+              <label>Publish to</label>
+              <div className="studio-seg-row">
+                <button
+                  type="button"
+                  className={`studio-chip ${publishMode === "web_only" ? "on" : ""}`}
+                  onClick={() => setPublishMode("web_only")}
+                >
+                  Public blog (/p)
+                </button>
+                <button
+                  type="button"
+                  className={`studio-chip ${publishMode === "web_and_email" ? "on" : ""}`}
+                  onClick={() => setPublishMode("web_and_email")}
+                  title="Kit email publishing is unchanged in code but not used by the Publish button"
+                >
+                  Kit email (legacy)
+                </button>
+              </div>
+            </div>
+            {publishMode === "web_and_email" && (
+              <label className="flex items-start gap-2 text-xs leading-snug">
+                <input
+                  type="checkbox"
+                  checked={confirmEmail}
+                  onChange={(e) => setConfirmEmail(e.target.checked)}
+                  className="mt-0.5"
+                />
+                I confirm sending this to my email list
+              </label>
+            )}
           </>
         )}
 
@@ -168,7 +247,14 @@ export function ChannelSettingsPanel({
               </div>
             </div>
             <div className="overflow-hidden rounded-lg border border-[var(--karrot-border)]">
-              <img src={igAspect === "square" ? squareOg : portraitOg} alt="OG preview" className="w-full" />
+              <img
+                key={igAspect === "square" ? squareOg : portraitOg}
+                src={igAspect === "square" ? squareOg : portraitOg}
+                alt="OG preview"
+                className="w-full"
+                loading="eager"
+                decoding="async"
+              />
             </div>
             <div className="flex flex-wrap gap-2">
               <button
@@ -219,7 +305,7 @@ export function ChannelSettingsPanel({
             <ul className="space-y-2 text-xs">
               {versions.slice(0, 5).map((v) => (
                 <li key={v.id} className="flex justify-between gap-2">
-                  <span className="truncate">{new Date(v.created_at).toLocaleString()}</span>
+                  <span className="truncate">{formatStudioDateTimeHkt(v.created_at)}</span>
                   <button
                     type="button"
                     className="font-semibold text-[var(--karrot-accent)]"
@@ -233,6 +319,25 @@ export function ChannelSettingsPanel({
           </div>
         )}
 
+        {post.kit_broadcast_id && (
+          <p className="text-xs text-[var(--karrot-muted)]">Kit: {post.kit_broadcast_id}</p>
+        )}
+
+        {onDeletePost && (
+          <div className="studio-danger-zone">
+            <p className="text-xs text-[var(--karrot-muted)]">
+              Permanently removes this post from the studio and public blog.
+            </p>
+            <button
+              type="button"
+              className="studio-btn studio-btn-danger w-full"
+              disabled={deletePending || demoMode}
+              onClick={onDeletePost}
+            >
+              {deletePending ? "Deleting…" : "Delete post"}
+            </button>
+          </div>
+        )}
       </div>
     </aside>
   );

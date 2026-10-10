@@ -19,14 +19,34 @@ import {
   normalizeGenerationPrefs,
   type PostGenerationPrefs,
 } from "@/lib/studio/generation-prefs";
-import { publicPostPath, validateSitePublishFields } from "@/lib/posts/site-publish";
+import { publishToKit, type KitPublishMode } from "@/lib/kit/client";
+import { renderKitPostHtml } from "@/lib/kit/render-post-html";
 import {
   appendSourcesToBody,
   buildSourcesMarkdown,
   type SourceCredit,
 } from "@/lib/posts/build-sources-markdown";
 import { generateSeoFields } from "@/lib/ai/seo";
-import { seoSlug, withSlugSuffix } from "@/lib/posts/seo-slug";
+import { computeReadTimeMinutes } from "@/lib/blog/read-time";
+import { stripSourcesSection } from "@/lib/blog/format";
+import type { PostCategory } from "@/lib/blog/categories";
+import { applyPostLinkToVariant, publicPostUrlForSlug } from "@/lib/ai/variant-link";
+import { keyPointFields } from "@/lib/posts/key-points";
+import { publicPostPath } from "@/lib/posts/site-publish";
+import {
+  deriveMetaDescription,
+  proposeSlugFromTitle,
+  publishPreflightMessage,
+  publishValidationMessage,
+  resolvePublishFields,
+} from "@/lib/posts/publish-prep";
+import {
+  effectiveSeoTitle,
+  isPlaceholderSeoTitle,
+  isPlaceholderSlug,
+  seoSlug,
+  withSlugSuffix,
+} from "@/lib/posts/seo-slug";
 import { slugify } from "@/lib/posts/slugify";
 import { readSourceFromUrl } from "@/lib/sources/read-source";
 import type { BilingualSummary } from "@/lib/sources/types";
@@ -34,17 +54,6 @@ import { createClient } from "@/lib/supabase/server";
 import { getAdminEmail } from "@/lib/env";
 
 export type SavePostResult = { ok: true } | { ok: false; error: string };
-
-/** Mutation actions that should surface errors in the editor banner instead of throwing. */
-export type StudioActionResult = SavePostResult;
-
-export type FillSeoResult =
-  | { ok: true; slug?: string; seoTitle?: string; metaDescription?: string }
-  | { ok: false; error: string };
-
-export type PublishPostResult = { ok: true; url: string } | { ok: false; error: string };
-
-export type DeletePostResult = { ok: true } | { ok: false; error: string };
 
 async function requireAdmin() {
   const supabase = await createClient();
@@ -196,6 +205,238 @@ export async function createPost() {
   return data.id as string;
 }
 
+export type DeletePostResult = { ok: true } | { ok: false; error: string };
+
+/** Permanently removes a post; child rows cascade via FK on delete. */
+export async function deletePost(postId: string): Promise<DeletePostResult> {
+  try {
+    const supabase = await requireAdmin();
+    const { data: post, error: loadErr } = await supabase
+      .from("studio_posts")
+      .select("id, slug")
+      .eq("id", postId)
+      .maybeSingle();
+    if (loadErr) return { ok: false, error: loadErr.message };
+    if (!post) return { ok: false, error: "Post not found." };
+
+    const { error: delErr } = await supabase.from("studio_posts").delete().eq("id", postId);
+    if (delErr) {
+      return {
+        ok: false,
+        error: `Delete failed: ${delErr.message}${delErr.code ? ` (${delErr.code})` : ""}`,
+      };
+    }
+
+    revalidatePath("/studio");
+    revalidatePath(`/studio/posts/${postId}`);
+    revalidatePath("/p");
+    revalidatePath("/posts");
+    if (post.slug) {
+      revalidatePath(publicPostPath(post.slug as string));
+      revalidatePath(`/posts/${post.slug}`);
+    }
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Delete failed." };
+  }
+}
+
+export type CreatedSuggestion = {
+  id: string;
+  paragraph: string;
+  source_id: null;
+  label?: string;
+  channel: SuggestionChannel;
+  extra?: { social_title?: string; key_point?: string; thread_parts?: string[] };
+};
+
+export type ActionResult =
+  | { ok: true; suggestion?: CreatedSuggestion }
+  | { ok: false; error: string };
+
+export type FillSeoResult =
+  | { ok: true; slug?: string; seoTitle?: string; metaDescription?: string }
+  | { ok: false; error: string };
+
+export async function fillPostSeo(input: {
+  postId: string;
+  title: string;
+  myTake: string;
+  body: string;
+  language: "zh-HK" | "en";
+  currentSlug: string;
+  currentSeoTitle: string;
+  fill: { slug: boolean; seoTitle: boolean; metaDescription: boolean };
+}): Promise<FillSeoResult> {
+  try {
+    if (!input.fill.slug && !input.fill.seoTitle && !input.fill.metaDescription) {
+      return { ok: true };
+    }
+    if (!input.body.trim()) return { ok: false, error: "Add a draft body first." };
+    const supabase = await requireAdmin();
+    const patch: { slug?: string; seo_title?: string; meta_description?: string } = {};
+    let slugOut: string | undefined;
+    let seoOut: string | undefined;
+    let metaOut: string | undefined;
+
+    if (input.fill.metaDescription) {
+      metaOut = deriveMetaDescription({
+        metaDescription: "",
+        myTake: input.myTake,
+        body: input.body,
+      });
+      if (metaOut) patch.meta_description = metaOut;
+    }
+
+    if (input.fill.seoTitle) {
+      seoOut = effectiveSeoTitle(input.currentSeoTitle, input.title);
+      if (isPlaceholderSeoTitle(seoOut) && !isPlaceholderSeoTitle(input.title)) {
+        seoOut = input.title.trim().slice(0, 60);
+      }
+      if (!isPlaceholderSeoTitle(seoOut)) patch.seo_title = seoOut;
+    }
+
+    if (input.fill.slug) {
+      const seoForSlug = seoOut ?? effectiveSeoTitle(input.currentSeoTitle, input.title);
+      let slug = proposeSlugFromTitle(input.title, input.postId, seoForSlug);
+      if (isPlaceholderSlug(slug)) {
+        slug = proposeSlugFromTitle(input.title || "post", input.postId, seoForSlug);
+      }
+      const { data: clash } = await supabase
+        .from("studio_posts")
+        .select("id")
+        .eq("slug", slug)
+        .maybeSingle();
+      if (clash && clash.id !== input.postId) {
+        slug = withSlugSuffix(slug, input.postId.replace(/-/g, "").slice(0, 4));
+      }
+      patch.slug = slug;
+      slugOut = slug;
+    }
+
+    const needAiSeo =
+      (input.fill.seoTitle && (!seoOut || isPlaceholderSeoTitle(seoOut))) ||
+      (input.fill.slug && slugOut && isPlaceholderSlug(slugOut));
+    if (needAiSeo) {
+      const drafted = await generateSeoFields({ body: input.body, language: input.language });
+      if (input.fill.seoTitle && isPlaceholderSeoTitle(seoOut ?? "")) {
+        seoOut = drafted.seoTitle;
+        patch.seo_title = seoOut;
+      }
+      if (input.fill.slug && (!slugOut || isPlaceholderSlug(slugOut))) {
+        let slug = drafted.slug || seoSlug(drafted.seoTitle) || slugOut || "post";
+        const { data: clash } = await supabase
+          .from("studio_posts")
+          .select("id")
+          .eq("slug", slug)
+          .maybeSingle();
+        if (clash && clash.id !== input.postId) {
+          slug = withSlugSuffix(slug, input.postId.replace(/-/g, "").slice(0, 4));
+        }
+        slugOut = slug;
+        patch.slug = slug;
+      }
+      if (input.fill.metaDescription && !metaOut && drafted.metaDescription) {
+        metaOut = drafted.metaDescription;
+        patch.meta_description = metaOut;
+      }
+    }
+
+    if (!Object.keys(patch).length) {
+      return { ok: false, error: "Could not derive SEO fields — add a title or more body text." };
+    }
+
+    const { error } = await supabase.from("studio_posts").update(patch).eq("id", input.postId);
+    if (error) return { ok: false, error: error.message };
+    revalidatePath(`/studio/posts/${input.postId}`);
+    return {
+      ok: true,
+      slug: slugOut,
+      seoTitle: seoOut,
+      metaDescription: metaOut,
+    };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Something went wrong" };
+  }
+}
+
+async function ensureUniqueSlug(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  slug: string,
+  postId: string,
+): Promise<string> {
+  let candidate = slug.trim();
+  if (!candidate) candidate = "post";
+  const { data: clash } = await supabase
+    .from("studio_posts")
+    .select("id")
+    .eq("slug", candidate)
+    .maybeSingle();
+  if (!clash || clash.id === postId) return candidate;
+  return withSlugSuffix(candidate, postId.replace(/-/g, "").slice(0, 6));
+}
+
+export async function publishToSite(input: {
+  id: string;
+  title: string;
+  slug: string;
+  my_take: string;
+  body: string;
+  body_language: "zh-HK" | "en";
+  seo_title: string;
+  meta_description: string;
+  category?: PostCategory | null;
+  key_point?: string;
+  social_title?: string;
+  social_captions?: { zh?: string; en?: string };
+  status?: "draft" | "published";
+  slug_manually_edited?: boolean;
+}): Promise<SavePostResult & { slug?: string }> {
+  try {
+    const preflight = publishPreflightMessage({
+      title: input.title,
+      body: input.body,
+    });
+    if (preflight) return { ok: false, error: preflight };
+
+    const resolved = resolvePublishFields({
+      title: input.title,
+      slug: input.slug,
+      seoTitle: input.seo_title,
+      metaDescription: input.meta_description,
+      myTake: input.my_take,
+      body: input.body,
+      postId: input.id,
+      status: input.status ?? "draft",
+      slugManuallyEdited: input.slug_manually_edited ?? false,
+    });
+
+    const blocked = publishValidationMessage({ ...resolved, postTitle: input.title });
+    if (blocked) return { ok: false, error: blocked };
+
+    const supabase = await requireAdmin();
+    const slugOut = await ensureUniqueSlug(supabase, resolved.slug, input.id);
+
+    const saved = await savePost({
+      ...input,
+      slug: slugOut,
+      status: "published",
+      seo_title: resolved.seoTitle,
+      meta_description: resolved.metaDescription,
+      category: input.category,
+    });
+    if (!saved.ok) return saved;
+
+    revalidatePath("/p");
+    revalidatePath(publicPostPath(slugOut));
+    revalidatePath(`/studio/posts/${input.id}`);
+    revalidatePath(`/preview/post/${input.id}`);
+    return { ok: true, slug: slugOut };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Publish failed." };
+  }
+}
+
 export async function savePost(input: {
   id: string;
   title: string;
@@ -209,6 +450,7 @@ export async function savePost(input: {
   social_captions?: { zh?: string; en?: string };
   seo_title?: string;
   meta_description?: string;
+  category?: PostCategory | null;
 }): Promise<SavePostResult> {
   try {
     const supabase = await requireAdmin();
@@ -216,6 +458,19 @@ export async function savePost(input: {
     const sources = await loadPostSources(supabase, input.id);
     const sourcesMd = buildSourcesMarkdown(sources);
     const bodyWithSources = appendSourcesToBody(input.body, sourcesMd);
+    const bodyForMetrics = stripSourcesSection(bodyWithSources);
+    const read_time = computeReadTimeMinutes(bodyForMetrics, input.body_language);
+    const excerpt =
+      input.meta_description?.trim() ||
+      input.my_take?.trim() ||
+      bodyForMetrics.split(/\n\n+/)[0]?.trim().slice(0, 280) ||
+      null;
+
+    const { data: existingRow } = await supabase
+      .from("studio_posts")
+      .select("published_at")
+      .eq("id", input.id)
+      .maybeSingle();
 
     const payload = {
       title: input.title,
@@ -224,12 +479,18 @@ export async function savePost(input: {
       body: bodyWithSources,
       body_language: input.body_language,
       status: input.status,
-      key_point: input.key_point ?? null,
+      ...keyPointFields(input.key_point),
       social_title: input.social_title ?? null,
       social_captions: input.social_captions ?? null,
       seo_title: input.seo_title ?? null,
       meta_description: input.meta_description ?? null,
-      published_at: input.status === "published" ? new Date().toISOString() : null,
+      category: input.category ?? null,
+      read_time,
+      excerpt,
+      published_at:
+        input.status === "published"
+          ? (existingRow?.published_at ?? new Date().toISOString())
+          : null,
     };
 
     const { data, error } = await supabase
@@ -258,7 +519,7 @@ export async function savePost(input: {
       body_language: input.body_language,
     });
     if (versionErr) {
-      return { ok: false, error: `Saved post but version history failed: ${versionErr.message}` };
+      console.error("[studio] version history insert failed:", versionErr.message);
     }
 
     revalidatePath(`/studio/posts/${input.id}`);
@@ -268,50 +529,6 @@ export async function savePost(input: {
     return { ok: true };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Save failed" };
-  }
-}
-
-export async function fillPostSeo(input: {
-  postId: string;
-  body: string;
-  language: "zh-HK" | "en";
-  fill: { slug: boolean; seoTitle: boolean; metaDescription: boolean };
-}): Promise<FillSeoResult> {
-  try {
-    if (!input.fill.slug && !input.fill.seoTitle && !input.fill.metaDescription) {
-      return { ok: true };
-    }
-    if (!input.body.trim()) return { ok: false, error: "Add a draft body first." };
-    const supabase = await requireAdmin();
-    const drafted = await generateSeoFields({ body: input.body, language: input.language });
-    const patch: { slug?: string; seo_title?: string; meta_description?: string } = {};
-    let slugOut: string | undefined;
-    if (input.fill.slug) {
-      let slug = drafted.slug || seoSlug(drafted.seoTitle) || "post";
-      const { data: clash } = await supabase
-        .from("studio_posts")
-        .select("id")
-        .eq("slug", slug)
-        .maybeSingle();
-      if (clash && clash.id !== input.postId) {
-        slug = withSlugSuffix(slug, input.postId.replace(/-/g, "").slice(0, 4));
-      }
-      patch.slug = slug;
-      slugOut = slug;
-    }
-    if (input.fill.seoTitle) patch.seo_title = drafted.seoTitle;
-    if (input.fill.metaDescription) patch.meta_description = drafted.metaDescription;
-    const { error } = await supabase.from("studio_posts").update(patch).eq("id", input.postId);
-    if (error) return { ok: false, error: error.message };
-    revalidatePath(`/studio/posts/${input.postId}`);
-    return {
-      ok: true,
-      slug: slugOut,
-      seoTitle: input.fill.seoTitle ? drafted.seoTitle : undefined,
-      metaDescription: input.fill.metaDescription ? drafted.metaDescription : undefined,
-    };
-  } catch (e) {
-    return { ok: false, error: e instanceof Error ? e.message : "Something went wrong" };
   }
 }
 
@@ -383,17 +600,17 @@ export async function saveVariant(input: {
         .eq("id", input.postId)
         .single();
       const caps = (post?.social_captions as { zh?: string; en?: string }) ?? {};
-      await supabase
-        .from("studio_posts")
-        .update({
-          social_captions: {
-            ...caps,
-            [input.channel === "zh" ? "zh" : "en"]: input.content,
-          },
-          ...(extra.social_title ? { social_title: extra.social_title } : {}),
-          ...(extra.key_point ? { key_point: extra.key_point } : {}),
-        })
-        .eq("id", input.postId);
+      const postPatch: Record<string, unknown> = {
+        social_captions: {
+          ...caps,
+          [input.channel === "zh" ? "zh" : "en"]: input.content,
+        },
+        ...(extra.social_title ? { social_title: extra.social_title } : {}),
+      };
+      if (typeof extra.key_point === "string") {
+        Object.assign(postPatch, keyPointFields(extra.key_point));
+      }
+      await supabase.from("studio_posts").update(postPatch).eq("id", input.postId);
     }
 
     revalidatePath(`/studio/posts/${input.postId}`);
@@ -542,13 +759,16 @@ export async function draftPostWithAi(
       prefs,
     });
 
-    const saved = await saveVariant({
-      postId,
+    const { error: sugErr } = await supabase.from("studio_suggestions").insert({
+      post_id: postId,
+      source_id: null,
+      paragraph: drafted.content,
+      status: "pending",
+      label: "Draft from sources",
       channel,
-      content: drafted.content,
       extra: drafted.extra ?? {},
     });
-    if (!saved.ok) throw new Error(saved.error);
+    if (sugErr) throw new Error(sugErr.message);
   }
 
   revalidatePath(`/studio/posts/${postId}`);
@@ -558,31 +778,64 @@ export async function generateVariantFromBlogAction(
   postId: string,
   channel: SuggestionChannel,
   prefsInput?: PostGenerationPrefs,
-) {
-  if (channel === "blog") throw new Error("Use blog tab only");
-  const supabase = await requireAdmin();
-  const { data: post } = await supabase.from("studio_posts").select("*").eq("id", postId).single();
-  if (!post) throw new Error("Post not found");
+  contentLanguage?: "zh-HK" | "en",
+): Promise<ActionResult> {
+  try {
+    if (channel === "blog") return { ok: false, error: "Use the blog tab for blog drafts." };
+    const supabase = await requireAdmin();
+    const { data: post } = await supabase.from("studio_posts").select("*").eq("id", postId).single();
+    if (!post) return { ok: false, error: "Post not found." };
 
-  const prefs = normalizeGenerationPrefs(prefsInput ?? post.generation_prefs);
-  await saveGenerationPrefs(postId, prefs);
+    const prefs = normalizeGenerationPrefs(prefsInput ?? post.generation_prefs);
+    await saveGenerationPrefs(postId, prefs);
 
-  const generated = await generateVariantFromBlog({
-    channel,
-    postTitle: post.title,
-    blogBody: stripSourcesSection(post.body as string),
-    language: post.body_language as "zh-HK" | "en",
-    prefs,
-  });
+    const blogBody = stripSourcesSection(post.body as string);
+    if (!blogBody.trim()) {
+      return { ok: false, error: "Write or draft the blog body first, then generate from blog." };
+    }
 
-  const saved = await saveVariant({
-    postId,
-    channel,
-    content: generated.content,
-    extra: generated.extra ?? {},
-  });
-  if (!saved.ok) throw new Error(saved.error);
-  revalidatePath(`/studio/posts/${postId}`);
+    const language = (contentLanguage ?? post.body_language) as "zh-HK" | "en";
+    const rawGenerated = await generateVariantFromBlog({
+      channel,
+      postTitle: post.title,
+      blogBody,
+      language,
+      prefs,
+    });
+    const generated = applyPostLinkToVariant(
+      rawGenerated,
+      publicPostUrlForSlug(post.slug as string),
+    );
+
+    const { data: inserted, error: sugErr } = await supabase
+      .from("studio_suggestions")
+      .insert({
+        post_id: postId,
+        source_id: null,
+        paragraph: generated.content,
+        status: "pending",
+        label: "Generated from blog",
+        channel,
+        extra: generated.extra ?? {},
+      })
+      .select("id, paragraph, label, channel, extra")
+      .single();
+    if (sugErr) return { ok: false, error: sugErr.message };
+    revalidatePath(`/studio/posts/${postId}`);
+    return {
+      ok: true,
+      suggestion: {
+        id: inserted.id,
+        paragraph: inserted.paragraph as string,
+        source_id: null,
+        label: inserted.label ?? "Generated from blog",
+        channel: inserted.channel as SuggestionChannel,
+        extra: (inserted.extra as CreatedSuggestion["extra"]) ?? undefined,
+      },
+    };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Generate from blog failed." };
+  }
 }
 
 export async function quickAdjustVariantAction(
@@ -590,7 +843,7 @@ export async function quickAdjustVariantAction(
   channel: SuggestionChannel,
   adjust: "shorter" | "longer" | "more_detail",
   prefsInput?: PostGenerationPrefs,
-): Promise<StudioActionResult> {
+): Promise<ActionResult> {
   try {
     const supabase = await requireAdmin();
     const { data: post } = await supabase.from("studio_posts").select("*").eq("id", postId).single();
@@ -610,7 +863,12 @@ export async function quickAdjustVariantAction(
 
     if (channel === "blog") {
       const body = stripSourcesSection(post.body as string);
-      if (!body.trim()) return { ok: false, error: "Write or draft blog content first." };
+      if (!body.trim()) {
+        return {
+          ok: false,
+          error: "Write or draft blog content first, then try Make shorter / longer again.",
+        };
+      }
       const revised = await adjustBlogBody({
         title: post.title,
         language,
@@ -618,15 +876,31 @@ export async function quickAdjustVariantAction(
         adjust,
         sources: adjust === "more_detail" ? bundles : undefined,
       });
-      const { error: sugErr } = await supabase.from("studio_suggestions").insert({
-        post_id: postId,
-        source_id: null,
-        paragraph: revised,
-        status: "pending",
-        label,
-        channel: "blog",
-      });
+      const { data: inserted, error: sugErr } = await supabase
+        .from("studio_suggestions")
+        .insert({
+          post_id: postId,
+          source_id: null,
+          paragraph: revised,
+          status: "pending",
+          label,
+          channel: "blog",
+        })
+        .select("id, paragraph, label, channel, extra")
+        .single();
       if (sugErr) return { ok: false, error: sugErr.message };
+      revalidatePath(`/studio/posts/${postId}`);
+      return {
+        ok: true,
+        suggestion: {
+          id: inserted.id,
+          paragraph: inserted.paragraph as string,
+          source_id: null,
+          label: inserted.label ?? label,
+          channel: "blog",
+          extra: (inserted.extra as CreatedSuggestion["extra"]) ?? undefined,
+        },
+      };
     } else {
       const { data: existing } = await supabase
         .from("studio_post_variants")
@@ -640,7 +914,7 @@ export async function quickAdjustVariantAction(
         return { ok: false, error: "No content to adjust — generate or draft first." };
       }
 
-      const adjusted = await adjustVariantContent({
+      const adjustedRaw = await adjustVariantContent({
         channel,
         adjust,
         postTitle: post.title,
@@ -650,31 +924,57 @@ export async function quickAdjustVariantAction(
         sources: adjust === "more_detail" ? bundles : undefined,
         prefs,
       });
+      const adjusted =
+        channel === "x" || channel === "threads"
+          ? applyPostLinkToVariant(adjustedRaw, publicPostUrlForSlug(post.slug as string))
+          : adjustedRaw;
 
-      const { error: sugErr } = await supabase.from("studio_suggestions").insert({
-        post_id: postId,
-        source_id: null,
-        paragraph: adjusted.content,
-        status: "pending",
-        label,
-        channel,
-        extra: adjusted.extra ?? {},
-      });
+      const { data: inserted, error: sugErr } = await supabase
+        .from("studio_suggestions")
+        .insert({
+          post_id: postId,
+          source_id: null,
+          paragraph: adjusted.content,
+          status: "pending",
+          label,
+          channel,
+          extra: adjusted.extra ?? {},
+        })
+        .select("id, paragraph, label, channel, extra")
+        .single();
       if (sugErr) return { ok: false, error: sugErr.message };
+      revalidatePath(`/studio/posts/${postId}`);
+      return {
+        ok: true,
+        suggestion: {
+          id: inserted.id,
+          paragraph: inserted.paragraph as string,
+          source_id: null,
+          label: inserted.label ?? label,
+          channel: inserted.channel as SuggestionChannel,
+          extra: (inserted.extra as CreatedSuggestion["extra"]) ?? undefined,
+        },
+      };
     }
-
-    revalidatePath(`/studio/posts/${postId}`);
-    return { ok: true };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Adjust failed." };
   }
 }
 
+export type ResolveSuggestionResult =
+  | {
+      ok: true;
+      label?: string | null;
+      channel?: SuggestionChannel;
+      body?: string;
+    }
+  | { ok: false; error: string };
+
 export async function resolveSuggestion(
   suggestionId: string,
   action: "accept" | "dismiss",
   editedText?: string,
-): Promise<StudioActionResult> {
+): Promise<ResolveSuggestionResult> {
   try {
     const supabase = await requireAdmin();
     const { data: sug } = await supabase
@@ -685,13 +985,12 @@ export async function resolveSuggestion(
     if (!sug) return { ok: false, error: "Suggestion not found." };
 
     if (action === "dismiss") {
-      const { error: dismissErr } = await supabase
+      await supabase
         .from("studio_suggestions")
         .update({ status: "dismissed" })
         .eq("id", suggestionId);
-      if (dismissErr) return { ok: false, error: dismissErr.message };
       revalidatePath(`/studio/posts/${sug.post_id}`);
-      return { ok: true };
+      return { ok: true, label: sug.label, channel: (sug.channel as SuggestionChannel) ?? "blog" };
     }
 
     const { data: post } = await supabase
@@ -706,11 +1005,12 @@ export async function resolveSuggestion(
     const extra =
       (sug.extra as VariantExtra & { social_captions?: { zh?: string; en?: string } }) ?? {};
 
+    let newBody: string | undefined;
+
     if (channel === "blog") {
       const sources = await loadPostSources(supabase, sug.post_id as string);
       const sourcesMd = buildSourcesMarkdown(sources);
       const marker = "## Sources";
-      let newBody: string;
       const fullBodyReplace =
         sug.label === "Draft from sources" ||
         sug.label === "Make shorter" ||
@@ -726,7 +1026,10 @@ export async function resolveSuggestion(
       }
 
       const postUpdate: Record<string, unknown> = { body: newBody };
-      if (extra.key_point) postUpdate.key_point = extra.key_point;
+      // Prefer key_points (jsonb) when present; keep key_point for older rows.
+      if (extra.key_point) {
+        Object.assign(postUpdate, keyPointFields(extra.key_point));
+      }
       if (extra.social_captions) postUpdate.social_captions = extra.social_captions;
 
       const { error: upErr } = await supabase
@@ -766,6 +1069,13 @@ export async function resolveSuggestion(
         .single();
       if (vErr) return { ok: false, error: vErr.message };
 
+      if (extra.key_point) {
+        await supabase
+          .from("studio_posts")
+          .update(keyPointFields(extra.key_point))
+          .eq("id", sug.post_id);
+      }
+
       await supabase.from("studio_post_variant_versions").insert({
         post_id: sug.post_id,
         channel,
@@ -774,100 +1084,65 @@ export async function resolveSuggestion(
       });
     }
 
-    const { error: statusErr } = await supabase
+    await supabase
       .from("studio_suggestions")
       .update({ status: editedText ? "edited" : "accepted" })
       .eq("id", suggestionId);
-    if (statusErr) return { ok: false, error: statusErr.message };
 
     revalidatePath(`/studio/posts/${sug.post_id}`);
-    return { ok: true };
+    return {
+      ok: true,
+      label: sug.label,
+      channel,
+      body: newBody,
+    };
   } catch (e) {
-    return { ok: false, error: e instanceof Error ? e.message : "Could not update suggestion." };
+    return { ok: false, error: e instanceof Error ? e.message : "Could not apply suggestion." };
   }
 }
 
-export async function deletePost(postId: string): Promise<DeletePostResult> {
-  try {
-    const supabase = await requireAdmin();
-    const { data: post } = await supabase
-      .from("studio_posts")
-      .select("slug, status")
-      .eq("id", postId)
-      .single();
-    if (!post) {
-      return { ok: false, error: "Post not found." };
-    }
+export async function publishPostToKit(
+  postId: string,
+  mode: KitPublishMode,
+  confirmEmail: boolean,
+) {
+  const supabase = await requireAdmin();
+  const { data: post } = await supabase.from("studio_posts").select("*").eq("id", postId).single();
+  if (!post) throw new Error("Post not found");
 
-    const slug = post.slug as string;
-    const wasPublished = post.status === "published";
+  const sources = await loadPostSources(supabase, postId);
+  const html = renderKitPostHtml({
+    title: post.title,
+    myTake: post.my_take,
+    bodyMarkdown: stripSourcesSection(post.body),
+    sources,
+  });
 
-    const { error: deleteErr } = await supabase.from("studio_posts").delete().eq("id", postId);
-    if (deleteErr) {
-      return { ok: false, error: `Delete failed: ${deleteErr.message}` };
-    }
-
-    revalidatePath("/studio");
-    revalidatePath(`/studio/posts/${postId}`);
-    revalidatePath("/p");
-    revalidatePath("/posts");
-    if (wasPublished) {
-      revalidatePath(publicPostPath(slug));
-      revalidatePath(`/posts/${slug}`);
-    }
-
-    return { ok: true };
-  } catch (e) {
-    return {
-      ok: false,
-      error: e instanceof Error ? e.message : "Delete failed.",
-    };
+  const kitResult = await publishToKit({
+    subject: post.title,
+    contentHtml: html,
+    broadcastId: post.kit_broadcast_id,
+    mode,
+    confirmEmail,
+  });
+  if (!kitResult.ok) {
+    throw new Error(kitResult.error);
   }
-}
+  const { broadcastId } = kitResult;
 
-export async function publishPostToSite(postId: string): Promise<PublishPostResult> {
-  try {
-    const supabase = await requireAdmin();
-    const { data: post } = await supabase.from("studio_posts").select("*").eq("id", postId).single();
-    if (!post) {
-      return { ok: false, error: "Post not found." };
-    }
+  await supabase
+    .from("studio_posts")
+    .update({
+      kit_broadcast_id: broadcastId,
+      status: "published",
+      published_at: new Date().toISOString(),
+    })
+    .eq("id", postId);
 
-    const validationError = validateSitePublishFields({
-      slug: post.slug as string,
-      seo_title: post.seo_title as string | null,
-      meta_description: post.meta_description as string | null,
-      body: post.body as string,
-    });
-    if (validationError) {
-      return { ok: false, error: validationError };
-    }
-
-    const publishedAt = post.published_at ?? new Date().toISOString();
-    const { error: updateErr } = await supabase
-      .from("studio_posts")
-      .update({
-        status: "published",
-        published_at: publishedAt,
-      })
-      .eq("id", postId);
-
-    if (updateErr) {
-      return { ok: false, error: `Publish failed: ${updateErr.message}` };
-    }
-
-    const url = publicPostPath(post.slug as string);
-    revalidatePath(`/studio/posts/${postId}`);
-    revalidatePath("/p");
-    revalidatePath(url);
-    revalidatePath("/posts");
-    return { ok: true, url };
-  } catch (e) {
-    return {
-      ok: false,
-      error: e instanceof Error ? e.message : "Publish failed.",
-    };
-  }
+  revalidatePath(`/studio/posts/${postId}`);
+  revalidatePath("/posts");
+  revalidatePath("/p");
+  return broadcastId;
 }
 
 export async function restoreVersion(versionId: string) {
@@ -921,10 +1196,6 @@ async function loadPostSources(
       };
     })
     .filter(Boolean) as (SourceCredit & { id: string })[];
-}
-
-function stripSourcesSection(body: string): string {
-  return body.replace(/\n## Sources[\s\S]*$/m, "").trim();
 }
 
 async function loadSourceBundles(

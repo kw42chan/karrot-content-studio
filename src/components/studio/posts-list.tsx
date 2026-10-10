@@ -1,5 +1,6 @@
 "use client";
 
+import { formatStudioDateTimeHkt } from "@/lib/format/timestamp";
 import Link from "next/link";
 import { useMemo, useState } from "react";
 
@@ -7,6 +8,7 @@ export type StudioListPost = {
   id: string;
   title: string;
   slug: string;
+  searchText?: string;
   status: "draft" | "published";
   updated_at: string;
   channels: ("blog" | "x" | "threads" | "instagram")[];
@@ -17,10 +19,14 @@ export function PostsList({
   posts,
   demoMode = false,
   onNewPost,
+  onDeletePost,
+  deletingId = null,
 }: {
   posts: StudioListPost[];
   demoMode?: boolean;
   onNewPost: () => void;
+  onDeletePost?: (post: StudioListPost) => void;
+  deletingId?: string | null;
 }) {
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<"all" | "draft" | "published">("all");
@@ -30,7 +36,8 @@ export function PostsList({
       if (filter !== "all" && p.status !== filter) return false;
       if (!query.trim()) return true;
       const q = query.toLowerCase();
-      return p.title.toLowerCase().includes(q) || p.slug.toLowerCase().includes(q);
+      const haystack = (p.searchText ?? `${p.title} ${p.slug}`).toLowerCase();
+      return p.title.toLowerCase().includes(q) || p.slug.toLowerCase().includes(q) || haystack.includes(q);
     });
   }, [posts, query, filter]);
 
@@ -79,6 +86,7 @@ export function PostsList({
               <th>Channels</th>
               <th>Updated</th>
               <th>Status</th>
+              {!demoMode && onDeletePost && <th className="studio-list-actions-col">Actions</th>}
             </tr>
           </thead>
           <tbody>
@@ -102,13 +110,7 @@ export function PostsList({
                   </div>
                 </td>
                 <td className="studio-list-date">
-                  {new Date(p.updated_at).toLocaleString("en-US", {
-                    month: "short",
-                    day: "numeric",
-                    year: "numeric",
-                    hour: "numeric",
-                    minute: "2-digit",
-                  })}
+                  {formatStudioDateTimeHkt(p.updated_at)}
                 </td>
                 <td>
                   <span
@@ -117,6 +119,18 @@ export function PostsList({
                     {p.status === "published" ? "Published" : "Draft"}
                   </span>
                 </td>
+                {!demoMode && onDeletePost && (
+                  <td className="studio-list-actions-col">
+                    <button
+                      type="button"
+                      className="studio-btn studio-btn-danger studio-btn-sm"
+                      disabled={deletingId === p.id}
+                      onClick={() => onDeletePost(p)}
+                    >
+                      {deletingId === p.id ? "Deleting…" : "Delete"}
+                    </button>
+                  </td>
+                )}
               </tr>
             ))}
           </tbody>

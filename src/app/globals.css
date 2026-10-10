@@ -97,6 +97,179 @@ body {
   cursor: not-allowed;
 }
 
+.login-form-error {
+  margin-top: 12px;
+  border-radius: 12px;
+  border: 1px solid #fecaca;
+  background: #fef2f2;
+  padding: 10px 12px;
+  font-size: 14px;
+  color: #991b1b;
+}
+
+.login-form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.login-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--karrot-muted);
+}
+
+.login-field input {
+  width: 100%;
+  border: 1px solid var(--karrot-border);
+  border-radius: 12px;
+  padding: 11px 14px;
+  font-size: 15px;
+  font-weight: 400;
+  color: var(--karrot-text);
+  background: var(--studio-surface, #fff);
+}
+
+.login-field input:focus {
+  outline: 2px solid var(--karrot-accent);
+  outline-offset: 1px;
+}
+
+.login-oauth-divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 14px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--karrot-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.login-oauth-divider::before,
+.login-oauth-divider::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--karrot-border);
+}
+
+.studio-change-password-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  z-index: 60;
+}
+
+.studio-change-password-dialog {
+  position: fixed;
+  inset: 0;
+  z-index: 61;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  pointer-events: none;
+}
+
+.studio-change-password-panel {
+  pointer-events: auto;
+  width: min(420px, 100%);
+  background: var(--studio-surface, #fff);
+  border: 1px solid var(--karrot-border);
+  border-radius: 14px;
+  padding: 20px 22px;
+  box-shadow: 0 16px 48px rgba(55, 63, 69, 0.18);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.studio-change-password-title {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--karrot-muted);
+}
+
+.studio-change-password-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--karrot-muted);
+}
+
+.studio-change-password-field input {
+  width: 100%;
+  border: 1px solid var(--karrot-border);
+  border-radius: 8px;
+  padding: 7px 10px;
+  font-size: 13px;
+  background: #fff;
+}
+
+.studio-change-password-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.studio-change-password-error {
+  font-size: 11px;
+  color: #b42318;
+}
+
+.studio-change-password-ok {
+  font-size: 11px;
+  color: #1a6b3c;
+}
+
+.studio-btn-danger {
+  border: 1px solid #e8b4b4;
+  background: #fff5f5;
+  color: #b42318;
+  font-weight: 600;
+}
+
+.studio-btn-danger:hover:not(:disabled) {
+  background: #fee4e2;
+  border-color: #f3a8a8;
+}
+
+.studio-btn-danger:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.studio-btn-sm {
+  padding: 6px 12px;
+  font-size: 12px;
+  border-radius: 999px;
+}
+
+.studio-list-actions-col {
+  width: 1%;
+  white-space: nowrap;
+  text-align: right;
+}
+
+.studio-danger-zone {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--karrot-border);
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
 /* —— Content Studio editor —— */
 .studio-root {
   min-height: 100vh;
@@ -479,6 +652,7 @@ body {
 }
 
 .studio-sidebar {
+  display: flex;
   width: 220px;
   flex-shrink: 0;
   background: var(--karrot-card);
@@ -488,6 +662,8 @@ body {
   position: sticky;
   top: 0;
   height: 100vh;
+  max-height: 100vh;
+  overflow: hidden;
 }
 
 .studio-brand {
@@ -526,6 +702,8 @@ body {
   flex-direction: column;
   gap: 4px;
   flex: 1;
+  min-height: 0;
+  overflow-y: auto;
 }
 
 .nav-item {
@@ -585,10 +763,26 @@ body {
 .studio-sidebar-foot {
   border-top: 1px solid var(--karrot-border);
   padding-top: 14px;
-  margin-top: 12px;
+  margin-top: auto;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+}
+
+.studio-sidebar-account {
   display: flex;
   align-items: center;
   gap: 10px;
+  min-width: 0;
+}
+
+.studio-sidebar-account-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
 }
 
 .studio-avatar {
@@ -658,6 +852,8 @@ body {
   left: 0;
   width: 260px;
   height: 100vh;
+  max-height: 100vh;
+  overflow: hidden;
   background: var(--karrot-card);
   z-index: 50;
   padding: 20px 14px;
@@ -1344,3 +1540,9 @@ body {
     display: none !important;
   }
 }
+
+.book-block{margin:1.5rem 0;padding:1.25rem 1.5rem;border-radius:1.25rem;background:var(--karrot-card,#F4E8DD);}
+.book-title{font-size:1.75rem;margin:0 0 .5rem;}
+.book-copy{margin:0 0 1rem;color:var(--karrot-muted,#6b5e54);max-width:36rem;}
+.book-email{margin:.75rem 0 0;font-size:.95rem;}
+.book-email a{color:var(--karrot-accent,#d18e63);}

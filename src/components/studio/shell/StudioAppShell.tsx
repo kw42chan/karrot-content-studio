@@ -1,6 +1,8 @@
 "use client";
 
+import { ChangePasswordForm } from "@/components/studio/change-password-form";
 import { StudioNavContext } from "@/components/studio/shell/studio-nav-context";
+import { useNewPost } from "@/components/studio/use-new-post";
 import { createClient } from "@/lib/supabase/client";
 import { getAdminEmail } from "@/lib/env";
 import Link from "next/link";
@@ -22,6 +24,7 @@ export function StudioAppShell({
   const router = useRouter();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [email, setEmail] = useState<string | null>(null);
+  const { newPost: createNewPost, pending: newPostPending } = useNewPost(demoMode);
 
   useEffect(() => {
     if (demoMode) {
@@ -54,15 +57,9 @@ export function StudioAppShell({
     router.push("/login");
   }
 
-  async function newPost() {
-    if (demoMode) {
-      router.push("/demo/studio");
-      return;
-    }
-    const res = await fetch("/api/studio/new-post", { method: "POST" });
-    if (!res.ok) return;
-    const { id } = (await res.json()) as { id: string };
-    router.push(`/studio/posts/${id}`);
+  function newPost() {
+    setDrawerOpen(false);
+    void createNewPost();
   }
 
   const nav = (
@@ -74,8 +71,13 @@ export function StudioAppShell({
       >
         Posts
       </Link>
-      <button type="button" className="nav-item nav-item-primary" onClick={newPost}>
-        + New post
+      <button
+        type="button"
+        className="nav-item nav-item-primary"
+        onClick={newPost}
+        disabled={newPostPending}
+      >
+        {newPostPending ? "Creating…" : "+ New post"}
       </button>
       <div className="nav-divider" />
       <Link
@@ -110,7 +112,13 @@ export function StudioAppShell({
 
       <nav className="studio-bottom-bar" aria-label="Primary">
         <Link href={postsHref} className={isPosts ? "active" : ""}>Posts</Link>
-        <button type="button" className="studio-bottom-new" onClick={newPost} aria-label="New post">
+        <button
+          type="button"
+          className="studio-bottom-new"
+          onClick={newPost}
+          disabled={newPostPending}
+          aria-label="New post"
+        >
           +
         </button>
         <Link href={PUBLIC_POSTS_PATH}>Live site</Link>
@@ -143,15 +151,20 @@ function AccountFoot({
 }) {
   return (
     <div className="studio-sidebar-foot">
-      <img src={AVATAR} alt="" className="studio-avatar" width={32} height={32} />
-      <div className="studio-acct">
-        <b>Darwin Chan</b>
-        <span>{email ?? "…"}</span>
+      <div className="studio-sidebar-account">
+        <img src={AVATAR} alt="" className="studio-avatar" width={32} height={32} />
+        <div className="studio-acct">
+          <b>Darwin Chan</b>
+          <span>{email ?? "…"}</span>
+        </div>
       </div>
-      {!demoMode && (
-        <button type="button" className="studio-signout" onClick={onSignOut}>
-          Sign out
-        </button>
+      {!demoMode && email && (
+        <div className="studio-sidebar-account-actions">
+          <ChangePasswordForm email={email} />
+          <button type="button" className="studio-signout" onClick={onSignOut}>
+            Sign out
+          </button>
+        </div>
       )}
     </div>
   );

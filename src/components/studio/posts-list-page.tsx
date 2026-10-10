@@ -1,7 +1,11 @@
 "use client";
 
+import { deletePost } from "@/app/actions/studio";
 import { PostsList, type StudioListPost } from "@/components/studio/posts-list";
+import { useNewPost } from "@/components/studio/use-new-post";
+import { navigateToStudioPostsHome } from "@/lib/studio/routes";
 import { useRouter } from "next/navigation";
+import { useState } from "react";
 
 export function PostsListPage({
   posts,
@@ -11,17 +15,38 @@ export function PostsListPage({
   demoMode?: boolean;
 }) {
   const router = useRouter();
+  const { newPost } = useNewPost(demoMode);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
-  async function onNewPost() {
-    if (demoMode) {
-      router.push("/demo/studio");
+  async function onDeletePost(post: StudioListPost) {
+    const label = post.title.trim() || post.slug || "this post";
+    if (
+      !window.confirm(
+        `Delete "${label}" permanently?\n\nThis removes the post from the studio and public /p pages. This cannot be undone.`,
+      )
+    ) {
       return;
     }
-    const res = await fetch("/api/studio/new-post", { method: "POST" });
-    if (!res.ok) return;
-    const { id } = (await res.json()) as { id: string };
-    router.push(`/studio/posts/${id}`);
+    setDeletingId(post.id);
+    try {
+      const result = await deletePost(post.id);
+      if (!result.ok) {
+        window.alert(result.error);
+        return;
+      }
+      navigateToStudioPostsHome(router);
+    } finally {
+      setDeletingId(null);
+    }
   }
 
-  return <PostsList posts={posts} demoMode={demoMode} onNewPost={onNewPost} />;
+  return (
+    <PostsList
+      posts={posts}
+      demoMode={demoMode}
+      onNewPost={() => void newPost()}
+      onDeletePost={demoMode ? undefined : onDeletePost}
+      deletingId={deletingId}
+    />
+  );
 }

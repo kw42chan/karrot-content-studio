@@ -1,10 +1,47 @@
-import { PublicPostView } from "@/components/public/post-view";
-import { isDraftPlaceholderSlug } from "@/lib/posts/site-publish";
+import { BlogArticle } from "@/components/blog/blog-article";
+import { BlogNewsletter } from "@/components/blog/blog-newsletter";
+import { BlogPostCard } from "@/components/blog/blog-post-card";
+import { BlogRail } from "@/components/blog/blog-rail";
+import { BlogServices } from "@/components/blog/blog-services";
+import { categoryLabel } from "@/lib/blog/categories";
+import {
+  adjacentPosts,
+  buildMoreInCategory,
+  sortPostsNewest,
+} from "@/lib/blog/queries";
+import { filterPublicPosts } from "@/lib/blog/public-posts";
+import { postDisplayTitle } from "@/lib/blog/format";
+import type { PublicBlogPost } from "@/lib/blog/types";
 import { createClient } from "@/lib/supabase/server";
 import type { Metadata } from "next";
+import Link from "next/link";
 import { notFound } from "next/navigation";
 
 export const dynamic = "force-dynamic";
+
+const POST_SELECT =
+  "id, title, slug, seo_title, meta_description, excerpt, my_take, body, body_language, published_at, category, read_time, cover_url, key_points";
+
+async function loadPublishedPosts() {
+  const supabase = await createClient();
+  const { data } = await supabase
+    .from("studio_posts")
+    .select(POST_SELECT)
+    .eq("status", "published")
+    .order("published_at", { ascending: false });
+  return filterPublicPosts(sortPostsNewest((data ?? []) as PublicBlogPost[]));
+}
+
+async function loadPost(slug: string) {
+  const supabase = await createClient();
+  const { data } = await supabase
+    .from("studio_posts")
+    .select(POST_SELECT)
+    .eq("slug", slug)
+    .eq("status", "published")
+    .maybeSingle();
+  return data as PublicBlogPost | null;
+}
 
 export async function generateMetadata({
   params,
@@ -12,70 +49,100 @@ export async function generateMetadata({
   params: Promise<{ slug: string }>;
 }): Promise<Metadata> {
   const { slug } = await params;
-  if (isDraftPlaceholderSlug(slug)) return { title: "Not found" };
-
-  const supabase = await createClient();
-  const { data: post } = await supabase
-    .from("studio_posts")
-    .select("seo_title, title, meta_description")
-    .eq("slug", slug)
-    .eq("status", "published")
-    .maybeSingle();
-
+  const post = await loadPost(slug);
   if (!post) return { title: "Not found" };
-
+  const title = postDisplayTitle(post);
   return {
-    title: post.seo_title || post.title,
-    description: post.meta_description ?? undefined,
+    title,
+    description: post.meta_description || post.excerpt || undefined,
   };
 }
 
-export default async function PublicSitePostPage({
+export default async function PublicBlogPostPage({
   params,
 }: {
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = await params;
-  if (isDraftPlaceholderSlug(slug)) notFound();
-
-  const supabase = await createClient();
-  const { data: post } = await supabase
-    .from("studio_posts")
-    .select("*")
-    .eq("slug", slug)
-    .eq("status", "published")
-    .maybeSingle();
-
+  const post = await loadPost(slug);
   if (!post) notFound();
 
-  const { data: links } = await supabase
-    .from("studio_post_sources")
-    .select("source_id, position")
-    .eq("post_id", post.id)
-    .order("position");
-
-  const ids = (links ?? []).map((l) => l.source_id);
-  const { data: sources } = ids.length
-    ? await supabase.from("studio_sources").select("id, author, title, url, platform").in("id", ids)
-    : { data: [] };
-
-  const byId = new Map((sources ?? []).map((s) => [s.id, s]));
-  const ordered = (links ?? []).map((l) => byId.get(l.source_id)).filter(Boolean);
+  const all = await loadPublishedPosts();
+  const related = buildMoreInCategory(all, post);
+  const { prev, next } = adjacentPosts(all, slug);
+  const catLabel = post.category ? categoryLabel(post.category) : null;
 
   return (
-    <div className="min-h-screen bg-[var(--karrot-bg)]">
-      <PublicPostView
-        post={{
-          title: post.seo_title || post.title,
-          slug: post.slug,
-          my_take: post.my_take,
-          body: post.body,
-          published_at: post.published_at,
-          body_language: post.body_language,
-        }}
-        sources={(ordered as { author: string | null; title: string | null; url: string; platform: string }[]) ?? []}
-        backHref="/p"
-      />
-    </div>
+    <>
+      <nav className="crumbs" aria-label="Breadcrumb" lang="en">
+        <Link href="/p" className={catLabel ? undefined : "current"}>
+          Posts
+        </Link>
+        {catLabel && (
+          <>
+            <span className="sep">/</span>
+            <Link className="current" href={`/p?category=${post.category}`}>
+              {catLabel}
+            </Link>
+          </>
+        )}
+      </nav>
+
+      <div className="post-layout">
+        <main>
+          <BlogArticle post={post} />
+        </main>
+        <BlogRail posts={all} activeCategory={post.category} />
+      </div>
+
+      {related.length > 0 && (
+        <section className="section" lang="en" aria-labelledby="relTitle">
+          <div className="related-head">
+            <div>
+              <div className="eyebrow">Keep reading</div>
+              <h2 className="h-anton" id="relTitle">
+                {catLabel ? `More in ${catLabel}` : "More posts"}
+              </h2>
+            </div>
+          </div>
+          <div className="post-grid">
+            {related.map((card) => (
+              <BlogPostCard
+                key={card.post.slug}
+                post={card.post}
+                previousLabel={card.previous}
+              />
+            ))}
+          </div>
+          <div className="prevnext">
+            {prev ? (
+              <Link className="pn" href={`/p/${prev.slug}`}>
+                <small>← Previous post</small>
+                <span className="h-anton">{postDisplayTitle(prev)}</span>
+              </Link>
+            ) : (
+              <div className="pn disabled">
+                <small>← Previous post</small>
+                <span>You&apos;re at the oldest post</span>
+              </div>
+            )}
+            {next ? (
+              <Link className="pn next" href={`/p/${next.slug}`}>
+                <small>Next post →</small>
+                <span className="h-anton">{postDisplayTitle(next)}</span>
+              </Link>
+            ) : (
+              <div className="pn next disabled">
+                <small>Next post →</small>
+                <span>You&apos;re reading the latest post</span>
+              </div>
+            )}
+          </div>
+        </section>
+      )}
+
+      <BlogServices variant="strip" />
+      <BlogNewsletter />
+    </>
   );
 }

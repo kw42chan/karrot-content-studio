@@ -1,3 +1,4 @@
+import { OpenRouterRequestError } from "@/lib/ai/openrouter-errors";
 import { getOpenRouterKey, getOpenRouterModel, getSiteUrl } from "@/lib/env";
 
 export async function completeJson<T>(params: {
@@ -29,7 +30,7 @@ export async function completeJson<T>(params: {
 
   if (!res.ok) {
     const err = await res.text();
-    throw new Error(`OpenRouter error: ${res.status} ${err}`);
+    throw new OpenRouterRequestError("chat/completions (json)", res.status, err);
   }
 
   const json = (await res.json()) as {
@@ -66,7 +67,7 @@ export async function completeText(params: {
 
   if (!res.ok) {
     const err = await res.text();
-    throw new Error(`OpenRouter error: ${res.status} ${err}`);
+    throw new OpenRouterRequestError("chat/completions (text)", res.status, err);
   }
 
   const json = (await res.json()) as {

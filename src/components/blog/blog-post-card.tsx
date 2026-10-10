@@ -1,0 +1,44 @@
+import { categoryLabel } from "@/lib/blog/categories";
+import {
+  formatPostDateUpper,
+  postCardExcerpt,
+  postDisplayTitle,
+  readTimeLabel,
+} from "@/lib/blog/format";
+import { BlogPostCover } from "@/components/blog/blog-post-cover";
+import type { PublicBlogPost } from "@/lib/blog/types";
+import Link from "next/link";
+
+function Cover({ post }: { post: PublicBlogPost }) {
+  return <BlogPostCover post={post} />;
+}
+
+export function BlogPostCard({
+  post,
+  previousLabel,
+}: {
+  post: PublicBlogPost;
+  previousLabel?: boolean;
+}) {
+  const href = `/p/${post.slug}`;
+  const meta = `${formatPostDateUpper(post.published_at)} · ${readTimeLabel(post.read_time)}`;
+
+  return (
+    <Link className="post-card" href={href}>
+      <Cover post={post} />
+      <div className="post-card-body">
+        <div className="card-top">
+          {post.category ? <span className="cat-label">{categoryLabel(post.category)}</span> : null}
+          {previousLabel && <span className="sample-tag" style={{ borderStyle: "solid" }}>Previous post</span>}
+        </div>
+        <h3 className="h-anton" lang={post.body_language === "zh-HK" ? "zh-Hant-HK" : "en"}>
+          {postDisplayTitle(post)}
+        </h3>
+        <p className="dek" lang={post.body_language === "zh-HK" ? "zh-Hant-HK" : "en"}>
+          {postCardExcerpt(post)}
+        </p>
+        <div className="post-meta">{meta}</div>
+      </div>
+    </Link>
+  );
+}
