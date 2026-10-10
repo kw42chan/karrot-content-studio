@@ -1,13 +1,15 @@
 # Karrot Content Studio
 
-Private content-marketing CMS for [Karrot Digital](https://karrotdigital.com). Paste source links (X, Threads, web), get bilingual summaries, draft blog posts, publish to Kit, and preview on `/posts`.
+Private content-marketing CMS for Karrot Digital. Attach source links (X, Threads, web), get bilingual summaries, draft per-channel variants, and **publish to this app’s public site** at `/p` and `/p/[slug]` (not Kit).
+
+> **Branch note:** PR #1 (`cursor/karrot-content-studio-v1-c421`) ships the studio CMS and on-app publish. A separate blog redesign may land on PR #2; public URLs on this branch are still `/p`.
 
 ## Stack
 
 - **Next.js** (App Router, TypeScript) on Vercel
-- **Supabase** (existing project `gmfzwuunaqzutbhudsxn`) — tables in `public` with `studio_` prefix
+- **Supabase** (project `gmfzwuunaqzutbhudsxn`) — `public.studio_*` tables only (does not modify news-feed / `ingest_*` tables)
 - **OpenRouter** for AI (server-side only)
-- **Kit v4** (optional legacy module — publish is on this app’s `/p` routes)
+- **Kit v4** — optional legacy code paths only; **Publish** in the studio writes to the site (`/p`), not Kit
 
 ## Setup
 
@@ -19,54 +21,48 @@ npm install
 
 ### 2. Environment variables
 
-Copy `.env.example` to `.env.local` and fill in values:
+Copy `.env.example` to `.env.local`. Do not commit secrets.
 
 | Variable | Required | Description |
 |----------|----------|-------------|
 | `NEXT_PUBLIC_SUPABASE_URL` | Yes | Supabase project URL |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Yes | Anon key |
-| `SUPABASE_SERVICE_ROLE_KEY` | Optional | Not used in v1 app paths (RLS + user session) |
-| `ADMIN_EMAIL` | Yes | Only this email can use `/studio` (default `darwin.chankawing@gmail.com`) |
-| `OPENROUTER_API_KEY` | For AI | Summaries, draft, enrich |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Yes | Supabase publishable (anon) key |
+| `SUPABASE_SERVICE_ROLE_KEY` | Optional | Not used by normal app routes (session + RLS) |
+| `ADMIN_EMAIL` | Yes | Only this email may use `/studio` (must match `studio_admin_email()` in DB) |
+| `OPENROUTER_API_KEY` | For AI | Summaries, drafts, SEO fill, adjustments |
 | `OPENROUTER_MODEL` | No | Default `qwen/qwen3-vl-32b-instruct` |
-| `KIT_API_KEY` | No | Not used for publish (site publish at `/p`); optional legacy only |
-| `BOOKING_URL` | No | CTA button URL (default contact page) |
-| `NEXT_PUBLIC_SITE_URL` | Yes | e.g. `https://your-app.vercel.app` for auth redirects |
+| `KIT_API_KEY` | No | Unused for publish; legacy Kit helpers only |
+| `BOOKING_URL` | No | CTA on published posts (default `/p#book`) |
+| `NEXT_PUBLIC_BOOKING_URL` | No | Client-visible booking CTA (default `/p#book`) |
+| `NEXT_PUBLIC_SITE_URL` | Yes | Canonical app URL for auth redirects (e.g. `https://your-app.vercel.app`) |
 
 ### 3. Supabase database
 
-Apply migrations in order:
+Apply all migrations under `supabase/migrations/` in timestamp order (studio tables only), e.g.:
 
 ```bash
-# Example with Supabase CLI linked to your project
 supabase db push
-# Or run SQL manually in the SQL editor:
-# supabase/migrations/20261005080000_studio_tables.sql
-# supabase/migrations/20261005090000_studio_comments.sql
-# supabase/migrations/20261005100000_studio_post_variants.sql
 ```
 
-**Important**
+If `ADMIN_EMAIL` is not `darwin.chankawing@gmail.com`, update `public.studio_admin_email()` in SQL to match before go-live.
 
-- If `ADMIN_EMAIL` is not `darwin.chankawing@gmail.com`, edit `public.studio_admin_email()` in the first migration before applying.
-- Apply migrations in timestamp order (`20261005080000` then `20261005090000`).
+**RLS:** All `studio_*` admin policies use `public.studio_is_admin()` only. `studio_is_admin()` is granted to `authenticated` (required for RLS) but not `anon`; `studio_admin_email()` is `service_role` only (see `20261010100000_studio_function_security.sql`).
 
-### 4. Google sign-in (Supabase Auth)
+### 4. Admin sign-in (Supabase Auth)
 
-1. **Google Cloud Console** → APIs & Services → Credentials → Create **OAuth client ID** (Web application).
-   - **Authorized redirect URI:** `https://gmfzwuunaqzutbhudsxn.supabase.co/auth/v1/callback`
-2. **Supabase** → Authentication → Providers → **Google** → Enable and paste the **Client ID** and **Client secret**.
-3. **Authentication → URL configuration:**
-   - **Site URL:** production URL (or `http://localhost:3000` for local)
-   - **Redirect URLs:** `http://localhost:3000/auth/callback`, `https://<your-vercel-domain>/auth/callback`, and each `https://<preview>.vercel.app/auth/callback` you use
+This branch uses **Google OAuth** on `/login` (enable Google in Supabase → Authentication → Providers).
 
-Only the email in `ADMIN_EMAIL` may use `/studio` (enforced in `/auth/callback`, middleware, and `studio_is_admin()` RLS).
+You can additionally enable **Email** in Supabase Auth if you want password login; the app does not ship a separate signup flow—create the admin user in the Supabase dashboard. Use at least **8 characters** for passwords; enforce stricter rules in Auth settings if needed.
 
-On Vercel **preview** deployments (`*.vercel.app`), the app uses `window.location.origin` for OAuth `redirectTo` so previews work without changing `NEXT_PUBLIC_SITE_URL`.
+1. **Google (current UI):** Google Cloud OAuth client → redirect URI `https://<project-ref>.supabase.co/auth/v1/callback` → paste client ID/secret into Supabase Google provider.
+2. **Authentication → URL configuration:** Site URL and redirect URLs must include `http://localhost:3000/auth/callback` and production `https://<host>/auth/callback` (plus preview URLs as needed).
+3. Only `ADMIN_EMAIL` may use `/studio` (checked in `/auth/callback`, middleware, and `studio_is_admin()` RLS).
+
+Preview deployments on `*.vercel.app` use `window.location.origin` for OAuth `redirectTo` when appropriate.
 
 ### 5. Vercel
 
-Create a project from this repo and set the same env vars. Deploy.
+Create a project from this repo and set the same env vars. Use **preview** deploys for PR #1; do not point production at this branch until you intentionally go live.
 
 ### 6. Local dev
 
@@ -74,7 +70,18 @@ Create a project from this repo and set the same env vars. Deploy.
 npm run dev
 ```
 
-Open `/login`, **Sign in with Google** using the `ADMIN_EMAIL` Google account, then `/studio`.
+Open `/login`, sign in with the `ADMIN_EMAIL` account, then `/studio`.
+
+## Go-live checklist (Darwin)
+
+- [ ] All `supabase/migrations/*.sql` applied to project `gmfzwuunaqzutbhudsxn` (studio migrations only).
+- [ ] `ADMIN_EMAIL`, `studio_admin_email()`, and Supabase Auth user email aligned.
+- [ ] `NEXT_PUBLIC_SITE_URL` and Auth redirect URLs match production host.
+- [ ] `OPENROUTER_API_KEY` set for production AI.
+- [ ] **Authentication → Password security → Enable leaked password protection (HaveIBeenPwned)** — currently **disabled** on this project (Supabase security advisor WARN). Must be toggled in the [Supabase dashboard](https://supabase.com/dashboard/project/gmfzwuunaqzutbhudsxn/auth/providers); not configurable via SQL migration.
+- [ ] If using email/password: minimum length ≥ 8 in Auth settings; prefer leaked-password protection enabled.
+- [ ] Smoke-test: `/login` → `/studio` → draft → **Publish** → public `/p` and `/p/[slug]`; Book CTA lands on `/p#book`.
+- [ ] Do **not** merge PR #1 to `main` until you explicitly want this stack on production.
 
 ## Scripts
 
@@ -82,25 +89,20 @@ Open `/login`, **Sign in with Google** using the `ADMIN_EMAIL` Google account, t
 |---------|-------------|
 | `npm run dev` | Development server |
 | `npm run build` | Production build (does not call Kit) |
-| `npm test` | Vitest (includes live fxtwitter check for X reader) |
+| `npm test` | Vitest |
 
-## Features (v1)
+## Features (v1 on this branch)
 
-- Google OAuth sign-in; `/studio` restricted to `ADMIN_EMAIL`
+- Google sign-in; `/studio` restricted to `ADMIN_EMAIL`
+- Multi-channel editor (blog, X, Threads, Instagram variants)
 - Source readers: X (fxtwitter), Threads (og tags), web (Readability)
-- Bilingual summaries (fixtures for three test URLs when OpenRouter is unset during summarize — production should set the key)
-- Posts with My take, AI draft, version history, enrichment suggestions
-- Social captions + OG image (`/api/og/social`)
-- **Publish** to public `/p` and `/p/[slug]` on this app (SEO title + meta required)
-- Legacy `/posts` listing (optional); primary public URLs are `/p`
+- Bilingual summaries (fixtures when OpenRouter is unset in dev)
+- **Publish to site** at `/p` (SEO title + meta required); legacy `/posts` redirect/list optional
+- Book CTA via `BOOKING_URL` / `NEXT_PUBLIC_BOOKING_URL` (default on-site `/p#book`)
 
 ## Test fixtures
 
-`src/lib/fixtures/summaries.json` mirrors `out.json` for:
-
-- `https://x.com/MagicPower21M/status/2106653640588927234`
-- `https://x.com/AYi_AInotes/status/2106639522586829094`
-- `https://www.threads.com/share/EtCKem4fj/`
+`src/lib/fixtures/summaries.json` mirrors sample URLs for offline summarize tests.
 
 ## License
 
