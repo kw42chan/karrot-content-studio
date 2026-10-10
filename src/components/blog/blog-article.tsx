@@ -17,6 +17,7 @@ marked.setOptions({ gfm: true, breaks: true });
 export function BlogArticle({ post }: { post: PublicBlogPost }) {
   const title = postDisplayTitle(post);
   const dek = postCardExcerpt(post);
+  const myTake = post.my_take?.trim() ?? "";
   const body = stripSourcesSection(post.body);
   const html = marked.parse(body) as string;
   const lang = post.body_language === "zh-HK" ? "zh-Hant-HK" : "en";
@@ -44,6 +45,17 @@ export function BlogArticle({ post }: { post: PublicBlogPost }) {
           <BlogShare title={title} slug={post.slug} />
         </div>
       </header>
+
+      {myTake && (
+        <section className="post-my-take" aria-labelledby="post-my-take-label">
+          <p className="eyebrow" id="post-my-take-label" lang="en">
+            My take
+          </p>
+          <p className="post-my-take-body" lang={lang}>
+            {myTake}
+          </p>
+        </section>
+      )}
 
       <div className="prose blog-prose" lang={lang} dangerouslySetInnerHTML={{ __html: html }} />
 
