@@ -36,6 +36,7 @@ import {
   type ChannelGenerationPrefs,
 } from "@/lib/studio/generation-prefs";
 import type { PostCategory } from "@/lib/blog/categories";
+import { studioListTitle } from "@/lib/blog/public-posts";
 import { navigateToStudioPostsHomeAfterEditorDelete } from "@/lib/studio/routes";
 import {
   effectiveSeoTitle,
@@ -45,7 +46,6 @@ import {
 } from "@/lib/posts/seo-slug";
 import {
   deriveMetaDescription,
-  proposeSlugFromTitle,
   publishPreflightMessage,
   publishValidationMessage,
   resolvePublishFields,
@@ -190,7 +190,7 @@ export function PostEditor({
   const [title, setTitle] = useState(post.title);
   const [status, setStatus] = useState(post.status);
   const [slug, setSlug] = useState(post.slug);
-  const [seoTitle, setSeoTitle] = useState(post.seo_title ?? post.title);
+  const [seoTitle, setSeoTitle] = useState(post.seo_title ?? "");
   const [metaDescription, setMetaDescription] = useState(post.meta_description ?? "");
   const [category, setCategory] = useState<PostCategory | "">(post.category ?? "");
   const slugEdited = useRef(false);
@@ -268,6 +268,11 @@ export function PostEditor({
     [localSuggestions, suggestionChannel],
   );
 
+  const editorChromeTitle = useMemo(
+    () => studioListTitle({ title, slug, seo_title: seoTitle }),
+    [title, slug, seoTitle],
+  );
+
   const bodyDisplay = useMemo(() => stripSourcesForEditor(body), [body]);
   const creditsBlock = useMemo(() => extractSourcesBlock(body), [body]);
 
@@ -303,15 +308,6 @@ export function PostEditor({
     setMessageIsError(isError);
   }
 
-  function seoFillNeeds() {
-    const resolvedSeo = effectiveSeoTitle(seoTitle, title);
-    return {
-      slug: isPlaceholderSlug(slug) && !slugEdited.current,
-      seoTitle: isPlaceholderSeoTitle(resolvedSeo) && !seoEdited.current,
-      metaDescription: isPlaceholderMeta(metaDescription),
-    };
-  }
-
   function appendLocalSuggestion(s: EditorSuggestion) {
     setLocalSuggestions((list) => {
       if (list.some((x) => x.id === s.id)) return list;
@@ -320,26 +316,35 @@ export function PostEditor({
   }
 
   async function fillSeoFromBody(bodyText: string, quiet = false) {
-    const fill = seoFillNeeds();
-    if (!fill.slug && !fill.seoTitle && !fill.metaDescription) {
-      if (!quiet) notify("Slug, SEO title, and meta description are already set.");
-      return;
-    }
     if (!bodyText.trim()) {
-      if (!quiet) notify("Add a draft body first.", true);
+      notify("Add post body before Fill SEO can run.", true);
       return;
     }
+
+    let updateSlug = true;
+    if (status === "published") {
+      updateSlug = window.confirm("This changes the post's public link. Continue with a new URL slug?");
+    }
+
     setSeoFilling(true);
     try {
       const result = await fillPostSeo({
         postId: post.id,
         title,
         myTake,
-        body: bodyText,
+        body,
+        body_language: lang,
+        status,
+        key_point: keyPoint,
+        social_title: variants.zh.extra.social_title,
+        social_captions: { zh: variants.zh.content, en: variants.en.content },
+        category: category || null,
         language: contentLocale,
         currentSlug: slug,
         currentSeoTitle: seoTitle,
-        fill,
+        currentMetaDescription: metaDescription,
+        regenerate: true,
+        updateSlug,
       });
       if (!result.ok) {
         notify(quiet ? `Added to the draft, but SEO failed: ${result.error}` : result.error, true);
@@ -357,13 +362,13 @@ export function PostEditor({
         setMetaDescription(result.metaDescription);
         metaEdited.current = false;
       }
-      notify(quiet ? "Added to the draft. SEO fields filled." : "SEO fields filled. You can still edit them.");
-      router.refresh();
+      notify(quiet ? "Added to the draft. Saved." : "Saved");
     } catch (e) {
       const msg = e instanceof Error ? e.message : "SEO fill failed.";
       notify(quiet ? `Added to the draft, but SEO failed: ${msg}` : msg, true);
     } finally {
       setSeoFilling(false);
+      setSaving(false);
     }
   }
 
@@ -644,16 +649,19 @@ export function PostEditor({
         notify(result.error, true);
         return;
       }
+      setPublishing(false);
+      setSaving(false);
       setStatus("published");
       setSlug(result.slug ?? resolved.slug);
       if (resolved.seoTitle !== seoTitle) setSeoTitle(resolved.seoTitle);
       if (resolved.metaDescription !== metaDescription) setMetaDescription(resolved.metaDescription);
-      const url = `${window.location.origin}/p/${result.slug}`;
+      const url = `${window.location.origin}/p/${result.slug ?? resolved.slug}`;
       notify(`Published. ${url}`);
     } catch (e) {
       notify(e instanceof Error ? e.message : "Publish failed.", true);
     } finally {
       setPublishing(false);
+      setSaving(false);
     }
   }
 
@@ -714,7 +722,7 @@ export function PostEditor({
             <div className="studio-crumb">
               <Link href={postsHref}>Posts</Link>
               <span className="studio-crumb-sep">/</span>
-              <span className="studio-crumb-title">{title}</span>
+              <span className="studio-crumb-title">{editorChromeTitle}</span>
             </div>
           </div>
           <span
@@ -882,22 +890,7 @@ export function PostEditor({
           <input
             className="studio-title-input"
             value={title}
-            onChange={(e) => {
-              const next = e.target.value;
-              setSeoTitle((seo) => {
-                if (!seoEdited.current && (isPlaceholderSeoTitle(seo) || seo === title)) {
-                  return next.trim() || seo;
-                }
-                return seo;
-              });
-              setSlug((prev) => {
-                if (!slugEdited.current && isPlaceholderSlug(prev)) {
-                  return proposeSlugFromTitle(next, post.id, seoTitle);
-                }
-                return prev;
-              });
-              setTitle(next);
-            }}
+            onChange={(e) => setTitle(e.target.value)}
             readOnly={demoMode}
           />
           <div className="studio-lang-bar">

@@ -28,16 +28,14 @@ export function looksLikeInternalTitle(text: string): boolean {
   return false;
 }
 
-/** Title shown in the studio posts list (never raw timestamp ids). */
+/** Title shown in the studio posts list and editor chrome — post title, not SEO title. */
 export function studioListTitle(post: {
   title: string;
   slug: string;
   seo_title?: string | null;
 }): string {
-  const display = publicDisplayTitle(post);
-  if (display === "Post" && looksLikeInternalTitle(post.title)) return "Untitled draft";
-  if (looksLikeInternalTitle(post.title) && looksLikeInternalTitle(display)) return "Untitled draft";
-  return display;
+  if (looksLikeInternalTitle(post.title.trim())) return "Untitled draft";
+  return publicArticleHeadline({ title: post.title, slug: post.slug });
 }
 
 export function isTestOrInternalPost(post: {
@@ -74,6 +72,24 @@ export function publicDisplayTitle(post: {
   if (title && !looksLikeInternalTitle(title)) return title;
   if (seo) return seo;
   return humanizeSlug(post.slug) || "Post";
+}
+
+/** Visible article headline on /p — post title only; SEO title is for metadata. */
+export function publicArticleHeadline(post: { title: string; slug: string }): string {
+  const title = post.title.trim();
+  if (title && !looksLikeInternalTitle(title)) return title;
+  return humanizeSlug(post.slug) || "Post";
+}
+
+/** Document title and Open Graph — SEO title when set, else post headline. */
+export function publicMetadataTitle(post: {
+  title: string;
+  slug: string;
+  seo_title?: string | null;
+}): string {
+  const seo = post.seo_title?.trim();
+  if (seo && !looksLikeInternalTitle(seo)) return seo;
+  return publicArticleHeadline(post);
 }
 
 export function hasKeyPoints(post: PublicBlogPost): boolean {
@@ -168,7 +184,7 @@ function latinFirstMixedCover(display: string): string | null {
 }
 
 export function coverWordForPost(post: PublicBlogPost): string {
-  const display = publicDisplayTitle(post);
+  const display = publicArticleHeadline(post);
   if (/harness/i.test(display) && /engineering/i.test(display)) {
     return "Harness\nEngineering";
   }

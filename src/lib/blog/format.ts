@@ -17,21 +17,18 @@ export function readTimeLabel(minutes: number | null | undefined): string {
   return `${m} min read`;
 }
 
-import { publicDisplayTitle } from "@/lib/blog/public-posts";
+import { publicArticleHeadline } from "@/lib/blog/public-posts";
 
+/** Visible heading on public post cards and prev/next — post title, not SEO title. */
 export function postDisplayTitle(entry: {
   seo_title?: string | null;
   title: string;
   slug?: string;
 }): string {
   if (entry.slug) {
-    return publicDisplayTitle({
-      title: entry.title,
-      slug: entry.slug,
-      seo_title: entry.seo_title,
-    });
+    return publicArticleHeadline({ title: entry.title, slug: entry.slug });
   }
-  return (entry.seo_title?.trim() || entry.title).trim();
+  return entry.title.trim() || (entry.seo_title?.trim() ?? "");
 }
 
 export function postCardExcerpt(post: {

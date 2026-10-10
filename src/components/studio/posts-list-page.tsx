@@ -15,7 +15,8 @@ export function PostsListPage({
   demoMode?: boolean;
 }) {
   const router = useRouter();
-  const { newPost } = useNewPost(demoMode);
+  const { newPost, pending: newPostPending, error: newPostError, clearError: clearNewPostError } =
+    useNewPost(demoMode);
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
   async function onDeletePost(post: StudioListPost) {
@@ -41,12 +42,23 @@ export function PostsListPage({
   }
 
   return (
-    <PostsList
-      posts={posts}
-      demoMode={demoMode}
-      onNewPost={() => void newPost()}
-      onDeletePost={demoMode ? undefined : onDeletePost}
-      deletingId={deletingId}
-    />
+    <>
+      {newPostError && (
+        <div className="studio-inline-alert studio-inline-alert-list" role="alert">
+          <span>{newPostError}</span>
+          <button type="button" className="studio-inline-alert-dismiss" onClick={clearNewPostError}>
+            Dismiss
+          </button>
+        </div>
+      )}
+      <PostsList
+        posts={posts}
+        demoMode={demoMode}
+        onNewPost={() => void newPost()}
+        newPostPending={newPostPending}
+        onDeletePost={demoMode ? undefined : onDeletePost}
+        deletingId={deletingId}
+      />
+    </>
   );
 }

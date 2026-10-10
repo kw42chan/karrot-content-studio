@@ -5,6 +5,7 @@ import {
   isTestOrInternalPost,
   isUsableCoverUrl,
   pickFeaturedPost,
+  publicArticleHeadline,
   publicDisplayTitle,
   studioListTitle,
 } from "./public-posts";
@@ -34,6 +35,16 @@ describe("isTestOrInternalPost", () => {
 });
 
 describe("studioListTitle", () => {
+  it("uses post title in studio, not seo_title", () => {
+    expect(
+      studioListTitle({
+        title: "如何安全註冊並使用官方Claude Opus 5.5？",
+        slug: "claude-opus-register",
+        seo_title: "中國護照註冊Claude帳號可行嗎？",
+      }),
+    ).toBe("如何安全註冊並使用官方Claude Opus 5.5？");
+  });
+
   it("shows Untitled draft for timestamp internal titles", () => {
     expect(
       studioListTitle({
@@ -42,6 +53,17 @@ describe("studioListTitle", () => {
         seo_title: null,
       }),
     ).toBe("Untitled draft");
+  });
+});
+
+describe("publicArticleHeadline", () => {
+  it("uses post title for H1 even when seo_title differs", () => {
+    expect(
+      publicArticleHeadline({
+        title: "QA fillseo renamed",
+        slug: "qa-fillseo-renamed",
+      }),
+    ).toBe("QA fillseo renamed");
   });
 });
 
@@ -142,14 +164,14 @@ describe("coverWordForPost", () => {
     ).toBe("Claude帳號安全");
   });
 
-  it("keeps leading Latin on long Claude zh SEO titles", () => {
+  it("keeps leading Latin on long Claude zh post titles", () => {
     expect(
       coverWordForPost(
         post({
           id: "1",
-          title: "fdraft",
+          title: "Claude帳號安全設定指南：穩定使用必備技巧",
           slug: "claude-account-safety",
-          seo_title: "Claude帳號安全設定指南：穩定使用必備技巧",
+          seo_title: "中國護照註冊Claude",
           body_language: "zh-HK",
         }),
       ),
@@ -183,7 +205,21 @@ describe("coverWordForPost", () => {
     expect(word).toBe("測試文章第五輪");
   });
 
-  it("does not use fdraft internal title for zh cover", () => {
+  it("uses post title for cover text, not seo_title", () => {
+    const word = coverWordForPost(
+      post({
+        id: "1",
+        title: "如何安全註冊並使用官方Claude",
+        slug: "use-chinese-passport-register-claude",
+        seo_title: "中國護照註冊Claude帳號可行嗎？",
+        body_language: "zh-HK",
+      }),
+    );
+    expect(word.startsWith("如何")).toBe(true);
+    expect(word).not.toContain("中國護照註冊");
+  });
+
+  it("falls back to humanized slug when post title is internal", () => {
     const word = coverWordForPost(
       post({
         id: "1",
@@ -194,7 +230,6 @@ describe("coverWordForPost", () => {
       }),
     );
     expect(word).not.toBe("fdraft");
-    expect(word.startsWith("Claude")).toBe(true);
-    expect(word).toContain("帳號");
+    expect(word).toMatch(/Claude/i);
   });
 });

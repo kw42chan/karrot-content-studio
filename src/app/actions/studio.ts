@@ -41,6 +41,14 @@ import {
   resolvePublishFields,
 } from "@/lib/posts/publish-prep";
 import {
+  deriveMetaForFill,
+  mergeSeoFillFromAi,
+  type PreparedSeoFill,
+  regenerateSeoFillTargets,
+  seoFillTargets,
+  validateSeoFill,
+} from "@/lib/posts/seo-fill";
+import {
   effectiveSeoTitle,
   isPlaceholderSeoTitle,
   isPlaceholderSlug,
@@ -263,97 +271,92 @@ export async function fillPostSeo(input: {
   title: string;
   myTake: string;
   body: string;
+  body_language: "zh-HK" | "en";
+  status: "draft" | "published";
+  key_point?: string;
+  social_title?: string;
+  social_captions?: { zh?: string; en?: string };
+  category?: PostCategory | null;
   language: "zh-HK" | "en";
   currentSlug: string;
   currentSeoTitle: string;
-  fill: { slug: boolean; seoTitle: boolean; metaDescription: boolean };
+  currentMetaDescription: string;
+  /** Explicit Fill SEO — regenerate fields from title + body (not “already set” heuristics). */
+  regenerate?: boolean;
+  /** When false (e.g. published post, user declined slug change), keep current slug. */
+  updateSlug?: boolean;
 }): Promise<FillSeoResult> {
   try {
-    if (!input.fill.slug && !input.fill.seoTitle && !input.fill.metaDescription) {
+    const bodyForAi = stripSourcesSection(input.body);
+    if (!bodyForAi.trim()) {
+      return { ok: false, error: "Add post body before Fill SEO can run." };
+    }
+
+    const snapshot = {
+      slug: input.currentSlug,
+      seoTitle: input.currentSeoTitle ?? "",
+      metaDescription: input.currentMetaDescription ?? "",
+      slugManuallyEdited: false,
+    };
+    const updateSlug = input.updateSlug ?? true;
+    const targets = input.regenerate
+      ? regenerateSeoFillTargets(updateSlug)
+      : seoFillTargets(snapshot);
+    if (!targets.slug && !targets.seoTitle && !targets.metaDescription) {
       return { ok: true };
     }
-    if (!input.body.trim()) return { ok: false, error: "Add a draft body first." };
+
     const supabase = await requireAdmin();
-    const patch: { slug?: string; seo_title?: string; meta_description?: string } = {};
-    let slugOut: string | undefined;
-    let seoOut: string | undefined;
-    let metaOut: string | undefined;
+    const oldSlug = input.currentSlug.trim();
+    const derivedMeta = deriveMetaForFill({ myTake: input.myTake, body: input.body });
 
-    if (input.fill.metaDescription) {
-      metaOut = deriveMetaDescription({
-        metaDescription: "",
-        myTake: input.myTake,
-        body: input.body,
-      });
-      if (metaOut) patch.meta_description = metaOut;
+    const ai = await generateSeoFields({
+      title: input.title,
+      body: bodyForAi,
+      language: input.language,
+    });
+    const filled = mergeSeoFillFromAi(snapshot, targets, ai, derivedMeta, {
+      preferAiMeta: Boolean(input.regenerate),
+      postTitle: input.title,
+    });
+
+    if (!targets.slug) {
+      filled.slug = oldSlug;
+    } else {
+      filled.slug = await ensureUniqueSlug(supabase, filled.slug, input.postId);
     }
 
-    if (input.fill.seoTitle) {
-      seoOut = effectiveSeoTitle(input.currentSeoTitle, input.title);
-      if (isPlaceholderSeoTitle(seoOut) && !isPlaceholderSeoTitle(input.title)) {
-        seoOut = input.title.trim().slice(0, 60);
-      }
-      if (!isPlaceholderSeoTitle(seoOut)) patch.seo_title = seoOut;
+    const validationError = validateSeoFill(targets, filled);
+    if (validationError) return { ok: false, error: validationError };
+
+    const saved = await savePost({
+      id: input.postId,
+      title: input.title,
+      slug: filled.slug,
+      my_take: input.myTake,
+      body: input.body,
+      body_language: input.body_language,
+      status: input.status,
+      key_point: input.key_point,
+      social_title: input.social_title,
+      social_captions: input.social_captions,
+      seo_title: filled.seoTitle,
+      meta_description: filled.metaDescription,
+      category: input.category,
+    });
+    if (!saved.ok) return saved;
+
+    revalidatePath(`/preview/post/${input.postId}`);
+    if (targets.slug && oldSlug && oldSlug !== filled.slug) {
+      revalidatePath(publicPostPath(oldSlug));
+      revalidatePath(`/posts/${oldSlug}`);
     }
 
-    if (input.fill.slug) {
-      const seoForSlug = seoOut ?? effectiveSeoTitle(input.currentSeoTitle, input.title);
-      let slug = proposeSlugFromTitle(input.title, input.postId, seoForSlug);
-      if (isPlaceholderSlug(slug)) {
-        slug = proposeSlugFromTitle(input.title || "post", input.postId, seoForSlug);
-      }
-      const { data: clash } = await supabase
-        .from("studio_posts")
-        .select("id")
-        .eq("slug", slug)
-        .maybeSingle();
-      if (clash && clash.id !== input.postId) {
-        slug = withSlugSuffix(slug, input.postId.replace(/-/g, "").slice(0, 4));
-      }
-      patch.slug = slug;
-      slugOut = slug;
-    }
-
-    const needAiSeo =
-      (input.fill.seoTitle && (!seoOut || isPlaceholderSeoTitle(seoOut))) ||
-      (input.fill.slug && slugOut && isPlaceholderSlug(slugOut));
-    if (needAiSeo) {
-      const drafted = await generateSeoFields({ body: input.body, language: input.language });
-      if (input.fill.seoTitle && isPlaceholderSeoTitle(seoOut ?? "")) {
-        seoOut = drafted.seoTitle;
-        patch.seo_title = seoOut;
-      }
-      if (input.fill.slug && (!slugOut || isPlaceholderSlug(slugOut))) {
-        let slug = drafted.slug || seoSlug(drafted.seoTitle) || slugOut || "post";
-        const { data: clash } = await supabase
-          .from("studio_posts")
-          .select("id")
-          .eq("slug", slug)
-          .maybeSingle();
-        if (clash && clash.id !== input.postId) {
-          slug = withSlugSuffix(slug, input.postId.replace(/-/g, "").slice(0, 4));
-        }
-        slugOut = slug;
-        patch.slug = slug;
-      }
-      if (input.fill.metaDescription && !metaOut && drafted.metaDescription) {
-        metaOut = drafted.metaDescription;
-        patch.meta_description = metaOut;
-      }
-    }
-
-    if (!Object.keys(patch).length) {
-      return { ok: false, error: "Could not derive SEO fields — add a title or more body text." };
-    }
-
-    const { error } = await supabase.from("studio_posts").update(patch).eq("id", input.postId);
-    if (error) return { ok: false, error: error.message };
-    revalidatePath(`/studio/posts/${input.postId}`);
     return {
       ok: true,
-      slug: slugOut,
-      seoTitle: seoOut,
-      metaDescription: metaOut,
+      slug: targets.slug ? filled.slug : undefined,
+      seoTitle: targets.seoTitle ? filled.seoTitle : undefined,
+      metaDescription: targets.metaDescription ? filled.metaDescription : undefined,
     };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Something went wrong" };
