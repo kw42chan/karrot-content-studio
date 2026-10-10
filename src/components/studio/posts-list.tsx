@@ -19,12 +19,14 @@ export function PostsList({
   posts,
   demoMode = false,
   onNewPost,
+  newPostPending = false,
   onDeletePost,
   deletingId = null,
 }: {
   posts: StudioListPost[];
   demoMode?: boolean;
   onNewPost: () => void;
+  newPostPending?: boolean;
   onDeletePost?: (post: StudioListPost) => void;
   deletingId?: string | null;
 }) {
@@ -50,8 +52,13 @@ export function PostsList({
           <button type="button" className="studio-btn studio-btn-ghost hidden sm:inline-flex">
             Import
           </button>
-          <button type="button" className="studio-btn studio-btn-primary" onClick={onNewPost}>
-            + New post
+          <button
+            type="button"
+            className="studio-btn studio-btn-primary"
+            onClick={onNewPost}
+            disabled={newPostPending}
+          >
+            {newPostPending ? "Creating…" : "+ New post"}
           </button>
         </div>
       </header>
@@ -139,8 +146,13 @@ export function PostsList({
           <div className="studio-list-empty">
             <p>No posts match your filters.</p>
             {onNewPost && (
-              <button type="button" className="studio-btn studio-btn-primary" onClick={onNewPost}>
-                + New post
+              <button
+                type="button"
+                className="studio-btn studio-btn-primary"
+                onClick={onNewPost}
+                disabled={newPostPending}
+              >
+                {newPostPending ? "Creating…" : "+ New post"}
               </button>
             )}
           </div>
