@@ -11,6 +11,7 @@ import {
 } from "@/lib/blog/queries";
 import { filterPublicPosts } from "@/lib/blog/public-posts";
 import { postDisplayTitle } from "@/lib/blog/format";
+import { publicMetadataTitle } from "@/lib/blog/public-posts";
 import type { PublicBlogPost } from "@/lib/blog/types";
 import { createClient } from "@/lib/supabase/server";
 import type { Metadata } from "next";
@@ -51,10 +52,14 @@ export async function generateMetadata({
   const { slug } = await params;
   const post = await loadPost(slug);
   if (!post) return { title: "Not found" };
-  const title = postDisplayTitle(post);
+  const title = publicMetadataTitle(post);
   return {
     title,
     description: post.meta_description || post.excerpt || undefined,
+    openGraph: {
+      title,
+      description: post.meta_description || post.excerpt || undefined,
+    },
   };
 }
 

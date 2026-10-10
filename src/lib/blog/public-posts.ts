@@ -81,6 +81,17 @@ export function publicArticleHeadline(post: { title: string; slug: string }): st
   return humanizeSlug(post.slug) || "Post";
 }
 
+/** Document title and Open Graph — SEO title when set, else post headline. */
+export function publicMetadataTitle(post: {
+  title: string;
+  slug: string;
+  seo_title?: string | null;
+}): string {
+  const seo = post.seo_title?.trim();
+  if (seo && !looksLikeInternalTitle(seo)) return seo;
+  return publicArticleHeadline(post);
+}
+
 export function hasKeyPoints(post: PublicBlogPost): boolean {
   const kp = post.key_points as KeyPoint[] | null | undefined;
   return Array.isArray(kp) && kp.length > 0;
@@ -173,7 +184,7 @@ function latinFirstMixedCover(display: string): string | null {
 }
 
 export function coverWordForPost(post: PublicBlogPost): string {
-  const display = publicDisplayTitle(post);
+  const display = publicArticleHeadline(post);
   if (/harness/i.test(display) && /engineering/i.test(display)) {
     return "Harness\nEngineering";
   }
