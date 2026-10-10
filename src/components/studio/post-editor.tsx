@@ -50,6 +50,7 @@ import {
   publishValidationMessage,
   resolvePublishFields,
 } from "@/lib/posts/publish-prep";
+import { seoFillTargets } from "@/lib/posts/seo-fill";
 import { formatStudioDateTimeHkt } from "@/lib/format/timestamp";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -304,12 +305,12 @@ export function PostEditor({
   }
 
   function seoFillNeeds() {
-    const resolvedSeo = effectiveSeoTitle(seoTitle, title);
-    return {
-      slug: isPlaceholderSlug(slug) && !slugEdited.current,
-      seoTitle: isPlaceholderSeoTitle(resolvedSeo) && !seoEdited.current,
-      metaDescription: isPlaceholderMeta(metaDescription),
-    };
+    return seoFillTargets({
+      slug,
+      seoTitle,
+      metaDescription,
+      slugManuallyEdited: slugEdited.current,
+    });
   }
 
   function appendLocalSuggestion(s: EditorSuggestion) {
@@ -339,7 +340,8 @@ export function PostEditor({
         language: contentLocale,
         currentSlug: slug,
         currentSeoTitle: seoTitle,
-        fill,
+        currentMetaDescription: metaDescription,
+        slugManuallyEdited: slugEdited.current,
       });
       if (!result.ok) {
         notify(quiet ? `Added to the draft, but SEO failed: ${result.error}` : result.error, true);
