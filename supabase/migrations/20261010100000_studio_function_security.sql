@@ -32,14 +32,15 @@ as $$
   select lower(coalesce(auth.jwt() ->> 'email', '')) = lower(public.studio_admin_email());
 $$;
 
--- RLS policies call these as the table owner; clients must not RPC-probe admin state.
+-- studio_is_admin: anon must not EXECUTE (no public RPC probe). authenticated needs EXECUTE
+-- so RLS policies USING (studio_is_admin()) work for signed-in queries.
 revoke all on function public.studio_is_admin() from public;
 revoke all on function public.studio_is_admin() from anon;
-revoke all on function public.studio_is_admin() from authenticated;
+grant execute on function public.studio_is_admin() to authenticated;
+grant execute on function public.studio_is_admin() to service_role;
 
+-- studio_admin_email: only used inside SECURITY DEFINER studio_is_admin(); not for client RPC.
 revoke all on function public.studio_admin_email() from public;
 revoke all on function public.studio_admin_email() from anon;
 revoke all on function public.studio_admin_email() from authenticated;
-
-grant execute on function public.studio_is_admin() to service_role;
 grant execute on function public.studio_admin_email() to service_role;
