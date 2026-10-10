@@ -326,7 +326,13 @@ export function PostEditor({
         postId: post.id,
         title,
         myTake,
-        body: bodyText,
+        body,
+        body_language: lang,
+        status,
+        key_point: keyPoint,
+        social_title: variants.zh.extra.social_title,
+        social_captions: { zh: variants.zh.content, en: variants.en.content },
+        category: category || null,
         language: contentLocale,
         currentSlug: slug,
         currentSeoTitle: seoTitle,
@@ -351,12 +357,12 @@ export function PostEditor({
         metaEdited.current = false;
       }
       notify(quiet ? "Added to the draft. Saved." : "Saved");
-      safeRefresh();
     } catch (e) {
       const msg = e instanceof Error ? e.message : "SEO fill failed.";
       notify(quiet ? `Added to the draft, but SEO failed: ${msg}` : msg, true);
     } finally {
       setSeoFilling(false);
+      setSaving(false);
     }
   }
 

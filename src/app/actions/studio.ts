@@ -271,6 +271,12 @@ export async function fillPostSeo(input: {
   title: string;
   myTake: string;
   body: string;
+  body_language: "zh-HK" | "en";
+  status: "draft" | "published";
+  key_point?: string;
+  social_title?: string;
+  social_captions?: { zh?: string; en?: string };
+  category?: PostCategory | null;
   language: "zh-HK" | "en";
   currentSlug: string;
   currentSeoTitle: string;
@@ -281,7 +287,8 @@ export async function fillPostSeo(input: {
   updateSlug?: boolean;
 }): Promise<FillSeoResult> {
   try {
-    if (!input.body.trim()) {
+    const bodyForAi = stripSourcesSection(input.body);
+    if (!bodyForAi.trim()) {
       return { ok: false, error: "Add post body before Fill SEO can run." };
     }
 
@@ -300,32 +307,51 @@ export async function fillPostSeo(input: {
     }
 
     const supabase = await requireAdmin();
+    const oldSlug = input.currentSlug.trim();
     const derivedMeta = deriveMetaForFill({ myTake: input.myTake, body: input.body });
 
     const ai = await generateSeoFields({
       title: input.title,
-      body: input.body,
+      body: bodyForAi,
       language: input.language,
     });
     const filled = mergeSeoFillFromAi(snapshot, targets, ai, derivedMeta, {
       preferAiMeta: Boolean(input.regenerate),
+      postTitle: input.title,
     });
 
-    if (targets.slug) {
+    if (!targets.slug) {
+      filled.slug = oldSlug;
+    } else {
       filled.slug = await ensureUniqueSlug(supabase, filled.slug, input.postId);
     }
 
     const validationError = validateSeoFill(targets, filled);
     if (validationError) return { ok: false, error: validationError };
 
-    const patch: { slug?: string; seo_title?: string; meta_description?: string } = {};
-    if (targets.slug) patch.slug = filled.slug;
-    if (targets.seoTitle) patch.seo_title = filled.seoTitle;
-    if (targets.metaDescription) patch.meta_description = filled.metaDescription;
+    const saved = await savePost({
+      id: input.postId,
+      title: input.title,
+      slug: filled.slug,
+      my_take: input.myTake,
+      body: input.body,
+      body_language: input.body_language,
+      status: input.status,
+      key_point: input.key_point,
+      social_title: input.social_title,
+      social_captions: input.social_captions,
+      seo_title: filled.seoTitle,
+      meta_description: filled.metaDescription,
+      category: input.category,
+    });
+    if (!saved.ok) return saved;
 
-    const { error } = await supabase.from("studio_posts").update(patch).eq("id", input.postId);
-    if (error) return { ok: false, error: error.message };
-    revalidatePath(`/studio/posts/${input.postId}`);
+    revalidatePath(`/preview/post/${input.postId}`);
+    if (targets.slug && oldSlug && oldSlug !== filled.slug) {
+      revalidatePath(publicPostPath(oldSlug));
+      revalidatePath(`/posts/${oldSlug}`);
+    }
+
     return {
       ok: true,
       slug: targets.slug ? filled.slug : undefined,

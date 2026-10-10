@@ -41,7 +41,7 @@ describe("generateSeoFields", () => {
     });
 
     const out = await generateSeoFields({
-      title: "AI 放工後",
+      title: "Untitled draft",
       body: "Cantonese draft about AI agents working after hours.",
       language: "zh-HK",
     });

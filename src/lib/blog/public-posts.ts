@@ -76,6 +76,13 @@ export function publicDisplayTitle(post: {
   return humanizeSlug(post.slug) || "Post";
 }
 
+/** Visible article headline on /p — post title only; SEO title is for metadata. */
+export function publicArticleHeadline(post: { title: string; slug: string }): string {
+  const title = post.title.trim();
+  if (title && !looksLikeInternalTitle(title)) return title;
+  return humanizeSlug(post.slug) || "Post";
+}
+
 export function hasKeyPoints(post: PublicBlogPost): boolean {
   const kp = post.key_points as KeyPoint[] | null | undefined;
   return Array.isArray(kp) && kp.length > 0;

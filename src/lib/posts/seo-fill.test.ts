@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { isPlaceholderSlug } from "./seo-slug";
 import {
+  buildFillSeoPersistPayload,
   deriveSlugWhenModelOmits,
   mergeSeoFillFromAi,
   regenerateSeoFillTargets,
+  resolveFillSeoSlug,
   seoFillTargets,
   validateSeoFill,
 } from "./seo-fill";
@@ -46,6 +48,37 @@ describe("seo-fill", () => {
     expect(targets.metaDescription).toBe(true);
   });
 
+  it("prefers renamed English post title over body-derived AI slug", () => {
+    expect(
+      resolveFillSeoSlug({
+        postTitle: "QA fillseo renamed",
+        aiSlug: "ai-agent-after-hours",
+        seoTitle: "AI 代理放工後繼續工作",
+      }),
+    ).toBe("qa-fillseo-renamed");
+  });
+
+  it("persists editor title and body in the same write as SEO fields", () => {
+    const payload = buildFillSeoPersistPayload(
+      {
+        title: "QA fillseo renamed",
+        body: "## Intro\n\nCantonese body paragraph.",
+        myTake: "My angle",
+        body_language: "zh-HK",
+        status: "draft",
+      },
+      {
+        slug: "qa-fillseo-renamed",
+        seoTitle: "AI 代理放工後繼續工作",
+        metaDescription: "Meta in Chinese.",
+      },
+    );
+    expect(payload.title).toBe("QA fillseo renamed");
+    expect(payload.body).toContain("Cantonese body");
+    expect(payload.slug).toBe("qa-fillseo-renamed");
+    expect(payload.seo_title).toBe("AI 代理放工後繼續工作");
+  });
+
   it("derives ASCII slug when model omits slug and SEO title is Chinese", () => {
     const slug = deriveSlugWhenModelOmits(
       "AI 代理放工後繼續工作",
@@ -79,11 +112,17 @@ describe("seo-fill", () => {
     expect(isPlaceholderSlug(filled.slug)).toBe(true);
     expect(validateSeoFill(targets, filled)).toMatch(/URL slug/);
 
-    const withSlug = mergeSeoFillFromAi(snapshot, targets, {
-      seoTitle: "AI 代理放工後繼續工作",
-      metaDescription: "關於 AI 在夜間持續運作的簡介。",
-      slug: "ai-agents-work-after-hours",
-    }, "");
+    const withSlug = mergeSeoFillFromAi(
+      snapshot,
+      targets,
+      {
+        seoTitle: "AI 代理放工後繼續工作",
+        metaDescription: "關於 AI 在夜間持續運作的簡介。",
+        slug: "ai-agents-work-after-hours",
+      },
+      "",
+      { postTitle: "Untitled draft" },
+    );
     expect(withSlug.slug).toBe("ai-agents-work-after-hours");
     expect(validateSeoFill(targets, withSlug)).toBeNull();
   });

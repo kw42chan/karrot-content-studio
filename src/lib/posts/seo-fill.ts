@@ -1,4 +1,4 @@
-import { deriveMetaDescription } from "@/lib/posts/publish-prep";
+import { deriveMetaDescription, isPlaceholderPostTitle } from "@/lib/posts/publish-prep";
 import {
   isPlaceholderMeta,
   isPlaceholderSeoTitle,
@@ -47,6 +47,54 @@ function containsCjk(text: string): boolean {
 }
 
 /** Derive ASCII slug when the model omitted SLUG (e.g. Chinese SEO title only). */
+/** Prefer a real post title for the URL slug; use AI/body slug only when title is empty or placeholder. */
+export function resolveFillSeoSlug(params: {
+  postTitle: string;
+  aiSlug: string;
+  seoTitle: string;
+}): string {
+  if (!isPlaceholderPostTitle(params.postTitle)) {
+    const fromPostTitle = seoSlug(params.postTitle);
+    if (fromPostTitle.length >= 2) return fromPostTitle;
+  }
+  const fromAi = seoSlug(params.aiSlug);
+  if (fromAi.length >= 2) return fromAi;
+  return deriveSlugWhenModelOmits(params.seoTitle, "", params.aiSlug);
+}
+
+export type FillSeoEditorPersist = {
+  title: string;
+  body: string;
+  myTake: string;
+  body_language: "zh-HK" | "en";
+  status: "draft" | "published";
+  key_point?: string;
+  social_title?: string;
+  social_captions?: { zh?: string; en?: string };
+  category?: string | null;
+};
+
+/** Fields saved together with SEO so unsaved editor text is not lost on refresh. */
+export function buildFillSeoPersistPayload(
+  editor: FillSeoEditorPersist,
+  seo: { slug: string; seoTitle: string; metaDescription: string },
+): Record<string, unknown> {
+  return {
+    title: editor.title,
+    body: editor.body,
+    my_take: editor.myTake,
+    body_language: editor.body_language,
+    status: editor.status,
+    slug: seo.slug,
+    seo_title: seo.seoTitle,
+    meta_description: seo.metaDescription,
+    key_point: editor.key_point ?? null,
+    social_title: editor.social_title ?? null,
+    social_captions: editor.social_captions ?? null,
+    category: editor.category ?? null,
+  };
+}
+
 export function deriveSlugWhenModelOmits(
   seoTitle: string,
   metaDescription: string,
@@ -73,7 +121,7 @@ export function mergeSeoFillFromAi(
   targets: SeoFillTargets,
   ai: { seoTitle: string; metaDescription: string; slug: string },
   derivedMeta: string,
-  options?: { preferAiMeta?: boolean },
+  options?: { preferAiMeta?: boolean; postTitle?: string },
 ): PreparedSeoFill {
   let slug = snapshot.slug;
   let seoTitle = snapshot.seoTitle;
@@ -92,7 +140,11 @@ export function mergeSeoFillFromAi(
     }
   }
   if (targets.slug) {
-    const derived = deriveSlugWhenModelOmits(seoTitle, "", ai.slug, ai.slug);
+    const derived = resolveFillSeoSlug({
+      postTitle: options?.postTitle ?? "",
+      aiSlug: ai.slug,
+      seoTitle,
+    });
     slug = derived || snapshot.slug;
   }
 

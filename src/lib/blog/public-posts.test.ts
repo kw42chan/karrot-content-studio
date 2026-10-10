@@ -5,6 +5,7 @@ import {
   isTestOrInternalPost,
   isUsableCoverUrl,
   pickFeaturedPost,
+  publicArticleHeadline,
   publicDisplayTitle,
   studioListTitle,
 } from "./public-posts";
@@ -42,6 +43,17 @@ describe("studioListTitle", () => {
         seo_title: null,
       }),
     ).toBe("Untitled draft");
+  });
+});
+
+describe("publicArticleHeadline", () => {
+  it("uses post title for H1 even when seo_title differs", () => {
+    expect(
+      publicArticleHeadline({
+        title: "QA fillseo renamed",
+        slug: "qa-fillseo-renamed",
+      }),
+    ).toBe("QA fillseo renamed");
   });
 });
 

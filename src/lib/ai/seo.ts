@@ -1,5 +1,5 @@
 import { completeText, parseSections } from "@/lib/ai/llm-json";
-import { deriveSlugWhenModelOmits } from "@/lib/posts/seo-fill";
+import { deriveSlugWhenModelOmits, resolveFillSeoSlug } from "@/lib/posts/seo-fill";
 import { seoSlug } from "@/lib/posts/seo-slug";
 
 export type SeoDraft = {
@@ -43,7 +43,8 @@ export async function generateSeoFields(params: {
   const workingTitle = params.title.trim();
   const prompt = `You write SEO fields for a Karrot Digital blog post.
 Language for the title and description: ${zh ? "Traditional Chinese (香港書面語)" : "English"}.
-The slug is ALWAYS lowercase English words separated by hyphens (romanize the topic if the post is Chinese). No dates, no "draft".
+The slug is ALWAYS lowercase English words separated by hyphens (romanize the topic if the post title is Chinese).
+Base the slug primarily on the working title; use the body only when the title is empty or "Untitled draft". No dates, no "draft".
 
 Return EXACTLY this plain-text format and nothing else:
 ===SEO_TITLE===
@@ -79,6 +80,7 @@ ${params.body.trim().slice(0, 6000)}`;
   );
   if (!slug) {
     slug = await inferEnglishSlug({
+      postTitle: params.title,
       seoTitle: parsed.seoTitle,
       metaDescription: parsed.metaDescription,
       body: params.body,
@@ -88,22 +90,33 @@ ${params.body.trim().slice(0, 6000)}`;
     throw new Error("The AI response was missing slug. Please try Fill SEO again.");
   }
 
+  const finalSlug = resolveFillSeoSlug({
+    postTitle: params.title,
+    aiSlug: slug,
+    seoTitle: parsed.seoTitle,
+  });
+  if (!finalSlug) {
+    throw new Error("The AI response was missing slug. Please try Fill SEO again.");
+  }
+
   return {
     seoTitle: parsed.seoTitle,
     metaDescription: parsed.metaDescription,
-    slug,
+    slug: finalSlug,
   };
 }
 
 /** Short follow-up when the main SEO response has title/description but no ASCII slug. */
 export async function inferEnglishSlug(params: {
+  postTitle: string;
   seoTitle: string;
   metaDescription: string;
   body: string;
 }): Promise<string> {
   const prompt = `Write ONE URL slug for a blog post: lowercase English words separated by hyphens, at most 60 characters.
-Romanize or translate the topic if the title is Chinese. No quotes, no explanation, slug only.
+Romanize or translate the working title if it is Chinese. Prefer the working title over the body. No quotes, no explanation, slug only.
 
+Working title: ${params.postTitle.trim() || "(untitled)"}
 SEO title: ${params.seoTitle.trim()}
 Meta: ${params.metaDescription.trim().slice(0, 200)}
 Body excerpt: ${params.body.trim().slice(0, 800)}`;
