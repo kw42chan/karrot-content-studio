@@ -101,7 +101,7 @@ export default async function PublicBlogPostPage({
             <div>
               <div className="eyebrow">Keep reading</div>
               <h2 className="h-anton" id="relTitle">
-                More in {catLabel}
+                {catLabel ? `More in ${catLabel}` : "More posts"}
               </h2>
             </div>
           </div>

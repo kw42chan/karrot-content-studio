@@ -19,6 +19,8 @@ export function ChannelSettingsPanel({
   setMetaDescription,
   category,
   setCategory,
+  keyPoint = "",
+  setKeyPoint,
   onFillSeo,
   seoFilling = false,
   publishMode,
@@ -56,6 +58,8 @@ export function ChannelSettingsPanel({
   setMetaDescription: (v: string) => void;
   category: PostCategory | "";
   setCategory: (v: PostCategory | "") => void;
+  keyPoint?: string;
+  setKeyPoint?: (v: string) => void;
   onFillSeo?: () => void;
   seoFilling?: boolean;
   publishMode: "web_only" | "web_and_email";
@@ -132,6 +136,17 @@ export function ChannelSettingsPanel({
                 ))}
               </select>
             </div>
+            {setKeyPoint && (
+              <div className="studio-field">
+                <label>Key point</label>
+                <input
+                  value={keyPoint}
+                  onChange={(e) => setKeyPoint(e.target.value)}
+                  readOnly={demoMode}
+                  placeholder="Short line for /p featured block and social image"
+                />
+              </div>
+            )}
             <p className="text-xs leading-snug text-[var(--karrot-muted)]">
               Post cards on <strong>/p</strong> use taupe covers with title words. Custom cover image upload is not
               available in the studio yet.

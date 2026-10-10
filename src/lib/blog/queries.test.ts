@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildMoreInCategory } from "./queries";
+import { buildMoreInCategory, countByCategory } from "./queries";
 import type { PublicBlogPost } from "./types";
 
 function post(partial: Partial<PublicBlogPost> & Pick<PublicBlogPost, "id" | "title" | "slug">): PublicBlogPost {
@@ -18,6 +18,16 @@ function post(partial: Partial<PublicBlogPost> & Pick<PublicBlogPost, "id" | "ti
     ...partial,
   };
 }
+
+describe("countByCategory", () => {
+  it("excludes featured post from All count to match the index grid", () => {
+    const featured = post({ id: "f", title: "Featured", slug: "featured", category: "automation" });
+    const other = post({ id: "o", title: "Other", slug: "other", category: "automation" });
+    const counts = countByCategory([featured, other], "featured");
+    expect(counts.all).toBe(1);
+    expect(counts.automation).toBe(1);
+  });
+});
 
 describe("buildMoreInCategory", () => {
   it("returns up to 3 real posts, topping up with previous posts from other categories", () => {

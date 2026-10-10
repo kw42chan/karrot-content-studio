@@ -12,15 +12,21 @@ export function sortPostsNewest(posts: PublicBlogPost[]): PublicBlogPost[] {
   });
 }
 
-export function countByCategory(posts: PublicBlogPost[]): Record<PostCategory | "all", number> {
+export function countByCategory(
+  posts: PublicBlogPost[],
+  featuredSlug: string | null = null,
+): Record<PostCategory | "all", number> {
+  const gridPosts = featuredSlug
+    ? posts.filter((p) => p.slug !== featuredSlug)
+    : posts;
   const counts: Record<PostCategory | "all", number> = {
-    all: posts.length,
+    all: gridPosts.length,
     "ai-tools": 0,
     automation: 0,
     "account-security": 0,
     "case-studies": 0,
   };
-  for (const p of posts) {
+  for (const p of gridPosts) {
     if (p.category) counts[p.category]++;
   }
   return counts;

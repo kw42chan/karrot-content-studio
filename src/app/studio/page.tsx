@@ -1,6 +1,6 @@
 import { PostsListPage } from "@/components/studio/posts-list-page";
 import type { StudioListPost } from "@/components/studio/posts-list";
-import { publicDisplayTitle } from "@/lib/blog/public-posts";
+import { studioListTitle } from "@/lib/blog/public-posts";
 import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
@@ -45,7 +45,7 @@ export default async function StudioHomePage() {
 
   const listPosts: StudioListPost[] = (posts ?? []).map((p) => ({
     id: p.id,
-    title: publicDisplayTitle({
+    title: studioListTitle({
       title: p.title,
       slug: p.slug,
       seo_title: p.seo_title as string | null,

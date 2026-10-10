@@ -23,8 +23,21 @@ export function looksLikeInternalTitle(text: string): boolean {
   if (/^untitled draft$/i.test(t)) return true;
   if (/^draft[-\s]/i.test(t)) return true;
   if (/fdraft/i.test(t)) return true;
+  if (/^\d{10,}$/.test(t)) return true;
   if (TEST_TITLE_OR_SLUG.test(t)) return true;
   return false;
+}
+
+/** Title shown in the studio posts list (never raw timestamp ids). */
+export function studioListTitle(post: {
+  title: string;
+  slug: string;
+  seo_title?: string | null;
+}): string {
+  const display = publicDisplayTitle(post);
+  if (display === "Post" && looksLikeInternalTitle(post.title)) return "Untitled draft";
+  if (looksLikeInternalTitle(post.title) && looksLikeInternalTitle(display)) return "Untitled draft";
+  return display;
 }
 
 export function isTestOrInternalPost(post: {
@@ -116,8 +129,9 @@ export function coverWordForPost(post: PublicBlogPost): string {
     const compact = display.replace(/\s/g, "");
     const latinLead = compact.match(/^[A-Za-z]{4,}/);
     if (latinLead) return latinLead[0].slice(0, 10);
-    if (compact.length <= 6) return compact || "帳號安全";
-    return compact.slice(0, 6);
+    const cjkMax = 10;
+    if (compact.length <= cjkMax) return compact || "帳號安全";
+    return compact.slice(0, cjkMax);
   }
   return fitCoverWords(display, COVER_WORD_MAX);
 }

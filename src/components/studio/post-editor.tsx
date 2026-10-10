@@ -38,6 +38,7 @@ import {
 import type { PostCategory } from "@/lib/blog/categories";
 import { navigateToStudioPostsHomeAfterEditorDelete } from "@/lib/studio/routes";
 import {
+  effectiveSeoTitle,
   isPlaceholderMeta,
   isPlaceholderSeoTitle,
   isPlaceholderSlug,
@@ -213,7 +214,14 @@ export function PostEditor({
   }, [post.my_take]);
 
   useEffect(() => {
-    setLocalSuggestions(suggestions);
+    setLocalSuggestions((prev) => {
+      const merged = new Map<string, EditorSuggestion>();
+      for (const s of suggestions) merged.set(s.id, s);
+      for (const s of prev) {
+        if (!merged.has(s.id)) merged.set(s.id, s);
+      }
+      return Array.from(merged.values());
+    });
   }, [suggestions]);
   useEffect(() => {
     setComments(initialComments);
@@ -259,16 +267,24 @@ export function PostEditor({
     setMessageIsError(isError);
   }
 
-  function seoFillFlags() {
+  function seoFillNeeds() {
+    const resolvedSeo = effectiveSeoTitle(seoTitle, title);
     return {
-      slug: !slugEdited.current && isPlaceholderSlug(slug),
-      seoTitle: !seoEdited.current && isPlaceholderSeoTitle(seoTitle),
-      metaDescription: !metaEdited.current && isPlaceholderMeta(metaDescription),
+      slug: isPlaceholderSlug(slug) && !slugEdited.current,
+      seoTitle: isPlaceholderSeoTitle(resolvedSeo) && !seoEdited.current,
+      metaDescription: isPlaceholderMeta(metaDescription),
     };
   }
 
+  function appendLocalSuggestion(s: EditorSuggestion) {
+    setLocalSuggestions((list) => {
+      if (list.some((x) => x.id === s.id)) return list;
+      return [s, ...list];
+    });
+  }
+
   async function fillSeoFromBody(bodyText: string, quiet = false) {
-    const fill = seoFillFlags();
+    const fill = seoFillNeeds();
     if (!fill.slug && !fill.seoTitle && !fill.metaDescription) {
       if (!quiet) notify("Slug, SEO title, and meta description are already set.");
       return;
@@ -281,17 +297,30 @@ export function PostEditor({
     try {
       const result = await fillPostSeo({
         postId: post.id,
+        title,
+        myTake,
         body: bodyText,
         language: contentLocale,
+        currentSlug: slug,
+        currentSeoTitle: seoTitle,
         fill,
       });
       if (!result.ok) {
         notify(quiet ? `Added to the draft, but SEO failed: ${result.error}` : result.error, true);
         return;
       }
-      if (result.slug) setSlug(result.slug);
-      if (result.seoTitle) setSeoTitle(result.seoTitle);
-      if (result.metaDescription) setMetaDescription(result.metaDescription);
+      if (result.slug) {
+        setSlug(result.slug);
+        slugEdited.current = false;
+      }
+      if (result.seoTitle) {
+        setSeoTitle(result.seoTitle);
+        seoEdited.current = false;
+      }
+      if (result.metaDescription !== undefined) {
+        setMetaDescription(result.metaDescription);
+        metaEdited.current = false;
+      }
       notify(quiet ? "Added to the draft. SEO fields filled." : "SEO fields filled. You can still edit them.");
       router.refresh();
     } catch (e) {
@@ -335,6 +364,16 @@ export function PostEditor({
       if (!result.ok) {
         notify(result.error, true);
         return;
+      }
+      if (result.suggestion) {
+        appendLocalSuggestion({
+          id: result.suggestion.id,
+          paragraph: result.suggestion.paragraph,
+          source_id: result.suggestion.source_id,
+          label: result.suggestion.label,
+          channel: result.suggestion.channel,
+          extra: result.suggestion.extra,
+        });
       }
       notify("Generated from blog — review the suggestion below.");
       safeRefresh();
@@ -385,7 +424,7 @@ export function PostEditor({
       setBody(result.body);
     }
     const channel = result.channel ?? sug?.channel ?? "blog";
-    if (channel === "zh" || channel === "en") {
+    if (channel === "zh" || channel === "en" || channel === "x" || channel === "threads") {
       const paragraph = editedText ?? sug?.paragraph ?? "";
       const fromSug = sug?.extra;
       setVariants((v) => ({
@@ -395,12 +434,17 @@ export function PostEditor({
           content: paragraph,
           extra: {
             ...v[channel].extra,
-            social_title: fromSug?.social_title ?? v[channel].extra.social_title ?? title,
-            key_point: fromSug?.key_point ?? v[channel].extra.key_point ?? "",
+            ...(fromSug?.thread_parts ? { thread_parts: fromSug.thread_parts } : {}),
+            ...(channel === "zh" || channel === "en"
+              ? {
+                  social_title: fromSug?.social_title ?? v[channel].extra.social_title ?? title,
+                  key_point: fromSug?.key_point ?? v[channel].extra.key_point ?? "",
+                }
+              : {}),
           },
         },
       }));
-      setOgTick((t) => t + 1);
+      if (channel === "zh" || channel === "en") setOgTick((t) => t + 1);
     }
     const isDraftAccept =
       channel === "blog" &&
@@ -431,6 +475,16 @@ export function PostEditor({
       if (!result.ok) {
         notify(result.error, true);
         return;
+      }
+      if (result.suggestion) {
+        appendLocalSuggestion({
+          id: result.suggestion.id,
+          paragraph: result.suggestion.paragraph,
+          source_id: result.suggestion.source_id,
+          label: result.suggestion.label,
+          channel: result.suggestion.channel,
+          extra: result.suggestion.extra,
+        });
       }
       notify("Suggestion ready — review it below.");
       safeRefresh();
@@ -916,7 +970,9 @@ export function PostEditor({
                 onQuickAdjust={runQuickAdjust}
                 suggestions={tabSuggestions}
                 demoMode={demoMode}
-                run={run}
+                onAccept={(id) => run(() => acceptSuggestion(id))}
+                onEdit={(id, text) => run(() => acceptSuggestion(id, text))}
+                onDismiss={(id) => run(() => dismissSuggestion(id))}
               />
             )}
 
@@ -936,7 +992,9 @@ export function PostEditor({
                 onQuickAdjust={runQuickAdjust}
                 suggestions={tabSuggestions}
                 demoMode={demoMode}
-                run={run}
+                onAccept={(id) => run(() => acceptSuggestion(id))}
+                onEdit={(id, text) => run(() => acceptSuggestion(id, text))}
+                onDismiss={(id) => run(() => dismissSuggestion(id))}
               />
             )}
 
@@ -948,6 +1006,15 @@ export function PostEditor({
                     <p className="text-xs text-[var(--karrot-muted)]">
                       Image preview uses the post title and key point — caption not required.
                     </p>
+                    <label className="studio-field mt-3">
+                      Key point (Roboto)
+                      <input
+                        value={variants[igStorage].extra.key_point ?? ""}
+                        onChange={(e) =>
+                          updateVariant(igStorage, { extra: { key_point: e.target.value } })
+                        }
+                      />
+                    </label>
                     <div className="my-3 overflow-hidden rounded-lg border border-[var(--karrot-border)]">
                       <img
                         src={igAspect === "square" ? squareOg : portraitOg}
@@ -1046,6 +1113,8 @@ export function PostEditor({
           }}
           category={category}
           setCategory={setCategory}
+          keyPoint={variants.zh.extra.key_point ?? ""}
+          setKeyPoint={(v) => updateVariant("zh", { extra: { key_point: v } })}
           onFillSeo={() => void fillSeoFromBody(stripSourcesForEditor(body))}
           seoFilling={seoFilling}
           publishMode={publishMode}
@@ -1107,7 +1176,9 @@ function VariantChannelEditor({
   onQuickAdjust,
   suggestions,
   demoMode,
-  run,
+  onAccept,
+  onEdit,
+  onDismiss,
 }: {
   label: string;
   content: string;
@@ -1123,8 +1194,20 @@ function VariantChannelEditor({
   onQuickAdjust: (a: "shorter" | "longer" | "more_detail") => void;
   suggestions: EditorSuggestion[];
   demoMode: boolean;
-  run: (fn: () => Promise<void>) => void;
+  onAccept: (id: string) => void;
+  onEdit: (id: string, text: string) => void;
+  onDismiss: (id: string) => void;
 }) {
+  const suggestionsBlock = (
+    <VariantSuggestions
+      suggestions={suggestions}
+      demoMode={demoMode}
+      onAccept={onAccept}
+      onEdit={onEdit}
+      onDismiss={onDismiss}
+    />
+  );
+
   if (showGenerate) {
     return (
       <div className="studio-generate-empty">
@@ -1138,6 +1221,7 @@ function VariantChannelEditor({
         <button type="button" className="studio-btn studio-btn-primary mt-3" onClick={onGenerate}>
           Generate from blog
         </button>
+        {suggestionsBlock}
       </div>
     );
   }
@@ -1158,28 +1242,7 @@ function VariantChannelEditor({
       <button type="button" className="mt-2 text-xs font-semibold text-[var(--karrot-accent)]" onClick={onCopy}>
         Copy
       </button>
-      <VariantSuggestions
-        suggestions={suggestions}
-        demoMode={demoMode}
-        onAccept={(id) =>
-          run(async () => {
-            const result = await resolveSuggestion(id, "accept");
-            if (!result.ok) throw new Error(result.error);
-          })
-        }
-        onEdit={(id, text) =>
-          run(async () => {
-            const result = await resolveSuggestion(id, "accept", text);
-            if (!result.ok) throw new Error(result.error);
-          })
-        }
-        onDismiss={(id) =>
-          run(async () => {
-            const result = await resolveSuggestion(id, "dismiss");
-            if (!result.ok) throw new Error(result.error);
-          })
-        }
-      />
+      {suggestionsBlock}
       <div className="mt-4 flex flex-col gap-3">
         <GenerationControls
           channel={channel}

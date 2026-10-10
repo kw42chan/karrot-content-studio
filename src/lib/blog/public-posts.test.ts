@@ -6,6 +6,7 @@ import {
   isUsableCoverUrl,
   pickFeaturedPost,
   publicDisplayTitle,
+  studioListTitle,
 } from "./public-posts";
 import type { PublicBlogPost } from "./types";
 
@@ -29,6 +30,18 @@ function post(partial: Partial<PublicBlogPost> & Pick<PublicBlogPost, "id" | "ti
 describe("isTestOrInternalPost", () => {
   it("flags retest-style titles", () => {
     expect(isTestOrInternalPost({ title: "Retest 3-5 persistence", slug: "claude-guide" })).toBe(true);
+  });
+});
+
+describe("studioListTitle", () => {
+  it("shows Untitled draft for timestamp internal titles", () => {
+    expect(
+      studioListTitle({
+        title: "1791607702533",
+        slug: "draft-1791607702533",
+        seo_title: null,
+      }),
+    ).toBe("Untitled draft");
   });
 });
 
@@ -99,6 +112,19 @@ describe("coverWordForPost", () => {
       }),
     );
     expect(word).toBe("QA r4");
+  });
+
+  it("keeps full short CJK title on cover when it fits", () => {
+    const word = coverWordForPost(
+      post({
+        id: "1",
+        title: "測試文章第五輪",
+        slug: "test-round-5",
+        seo_title: "測試文章第五輪",
+        body_language: "zh-HK",
+      }),
+    );
+    expect(word).toBe("測試文章第五輪");
   });
 
   it("does not use fdraft internal title for zh cover", () => {

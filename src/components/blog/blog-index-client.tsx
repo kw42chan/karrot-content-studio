@@ -26,7 +26,10 @@ export function BlogIndexClient({ posts }: { posts: PublicBlogPost[] }) {
   }, [searchParams]);
   const publicPosts = useMemo(() => filterPublicPosts(posts), [posts]);
   const featured = useMemo(() => pickFeaturedPost(posts), [posts]);
-  const counts = useMemo(() => countByCategory(publicPosts), [publicPosts]);
+  const counts = useMemo(
+    () => countByCategory(publicPosts, featured?.slug ?? null),
+    [publicPosts, featured],
+  );
   const visibleCategories = useMemo(
     () => POST_CATEGORIES.filter((cat) => counts[cat] > 0),
     [counts],
