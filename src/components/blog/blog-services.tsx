@@ -6,6 +6,8 @@ import Link from "next/link";
 type Variant = "band" | "strip" | "rail";
 
 export function BlogServices({ variant = "band" }: { variant?: Variant }) {
+  if (BLOG_SERVICES.length === 0) return null;
+
   const bookingUrl = getBookingUrl();
 
   if (variant === "rail") {
@@ -14,7 +16,7 @@ export function BlogServices({ variant = "band" }: { variant?: Variant }) {
         {BLOG_SERVICES.map((s) => (
           <li key={s.id}>
             {s.title}
-            <Link href="/p#services">→</Link>
+            <Link href={s.href.startsWith("/") ? s.href : `/p${s.href}`}>→</Link>
           </li>
         ))}
       </ul>
@@ -26,7 +28,6 @@ export function BlogServices({ variant = "band" }: { variant?: Variant }) {
       <section className="section strip" aria-labelledby="workTitle">
         <div className="strip-head">
           <div className="left">
-            <span className="sample-note">Example services — replace with real offer</span>
             <h2 className="h-anton" id="workTitle">Work with Karrot Digital</h2>
           </div>
           <a className="btn btn-accent" href={bookingUrl}>Book a conversation</a>
@@ -51,7 +52,6 @@ export function BlogServices({ variant = "band" }: { variant?: Variant }) {
     <section className="section services-band" id="services" aria-labelledby="servicesTitle">
       <div className="services-head">
         <div>
-          <span className="sample-note">Example services — replace with real offer</span>
           <h2 className="h-anton" id="servicesTitle">How I can help</h2>
           <p>
             I help businesses automate with intelligent tech — without the lockouts, dead ends, and

@@ -8,13 +8,7 @@ import {
   type PostCategory,
 } from "@/lib/blog/categories";
 import { BLOG_INTRO_BLURB } from "@/lib/blog/constants";
-import {
-  buildIndexGrid,
-  countByCategory,
-  filterGridCards,
-  shouldShowSampleCards,
-  type GridCard,
-} from "@/lib/blog/queries";
+import { buildIndexGrid, countByCategory, filterGridCards } from "@/lib/blog/queries";
 import { filterPublicPosts, pickFeaturedPost } from "@/lib/blog/public-posts";
 import type { PublicBlogPost } from "@/lib/blog/types";
 import { useSearchParams } from "next/navigation";
@@ -32,17 +26,16 @@ export function BlogIndexClient({ posts }: { posts: PublicBlogPost[] }) {
   }, [searchParams]);
   const publicPosts = useMemo(() => filterPublicPosts(posts), [posts]);
   const featured = useMemo(() => pickFeaturedPost(posts), [posts]);
-  const includeSamples = shouldShowSampleCards(publicPosts.length);
-  const counts = useMemo(
-    () => countByCategory(publicPosts, includeSamples),
-    [publicPosts, includeSamples],
+  const counts = useMemo(() => countByCategory(publicPosts), [publicPosts]);
+  const visibleCategories = useMemo(
+    () => POST_CATEGORIES.filter((cat) => counts[cat] > 0),
+    [counts],
   );
   const allCards = useMemo(
-    () => buildIndexGrid(publicPosts, featured?.slug ?? null, includeSamples),
-    [publicPosts, featured, includeSamples],
+    () => buildIndexGrid(publicPosts, featured?.slug ?? null),
+    [publicPosts, featured],
   );
   const visible = useMemo(() => filterGridCards(allCards, category), [allCards, category]);
-  const sampleCount = includeSamples ? allCards.filter((c) => c.kind === "sample").length : 0;
 
   return (
     <>
@@ -64,11 +57,6 @@ export function BlogIndexClient({ posts }: { posts: PublicBlogPost[] }) {
               All posts
             </h2>
           </div>
-          {includeSamples && (
-            <span className="sample-note">
-              {sampleCount} of {allCards.length} cards are sample data — &quot;Example post&quot;
-            </span>
-          )}
         </div>
         <div className="filter-bar">
           <div className="chips scroll" role="tablist" aria-label="Filter posts by category">
@@ -81,7 +69,7 @@ export function BlogIndexClient({ posts }: { posts: PublicBlogPost[] }) {
             >
               All <span className="count">{counts.all}</span>
             </button>
-            {POST_CATEGORIES.map((cat) => (
+            {visibleCategories.map((cat) => (
               <button
                 key={cat}
                 type="button"
@@ -98,16 +86,11 @@ export function BlogIndexClient({ posts }: { posts: PublicBlogPost[] }) {
         </div>
 
         <div className="post-grid">
-          {visible.map((card) => renderCard(card))}
+          {visible.map((card) => (
+            <BlogPostCard key={card.post.slug} post={card.post} />
+          ))}
         </div>
       </section>
     </>
   );
-}
-
-function renderCard(card: GridCard) {
-  if (card.kind === "sample") {
-    return <BlogPostCard key={card.post.id} sample={card.post} />;
-  }
-  return <BlogPostCard key={card.post.slug} post={card.post} />;
 }

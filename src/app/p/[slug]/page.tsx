@@ -7,7 +7,6 @@ import { categoryLabel } from "@/lib/blog/categories";
 import {
   adjacentPosts,
   buildMoreInCategory,
-  shouldShowSampleCards,
   sortPostsNewest,
 } from "@/lib/blog/queries";
 import { filterPublicPosts } from "@/lib/blog/public-posts";
@@ -69,8 +68,7 @@ export default async function PublicBlogPostPage({
   if (!post) notFound();
 
   const all = await loadPublishedPosts();
-  const includeSamples = shouldShowSampleCards(all.length);
-  const related = buildMoreInCategory(all, post, includeSamples);
+  const related = buildMoreInCategory(all, post);
   const { prev, next } = adjacentPosts(all, slug);
   const catLabel = post.category ? categoryLabel(post.category) : "Posts";
 
@@ -93,62 +91,51 @@ export default async function PublicBlogPostPage({
         <BlogRail posts={all} activeCategory={post.category} />
       </div>
 
-      <section className="section" lang="en" aria-labelledby="relTitle">
-        <div className="related-head">
-          <div>
-            <div className="eyebrow">Keep reading</div>
-            <h2 className="h-anton" id="relTitle">
-              More in {catLabel}
-            </h2>
+      {related.length > 0 && (
+        <section className="section" lang="en" aria-labelledby="relTitle">
+          <div className="related-head">
+            <div>
+              <div className="eyebrow">Keep reading</div>
+              <h2 className="h-anton" id="relTitle">
+                More in {catLabel}
+              </h2>
+            </div>
           </div>
-          {includeSamples && (
-            <span className="alt">
-              Fewer than 3 in this category → topped up with <b>Previous posts</b>
-            </span>
-          )}
-        </div>
-        <div className="post-grid">
-          {related.map((card) =>
-            card.kind === "sample" ? (
-              <BlogPostCard
-                key={card.post.id}
-                sample={card.post}
-                samplePrevious={card.previous}
-              />
-            ) : (
+          <div className="post-grid">
+            {related.map((card) => (
               <BlogPostCard
                 key={card.post.slug}
                 post={card.post}
                 previousLabel={card.previous}
               />
-            ),
-          )}
-        </div>
-        <div className="prevnext">
-          {prev ? (
-            <Link className="pn" href={`/p/${prev.slug}`}>
-              <small>← Previous post</small>
-              <span className="h-anton">{postDisplayTitle(prev)}</span>
-            </Link>
-          ) : (
-            <div className="pn disabled">
-              <small>← Previous post</small>
-              <span>You&apos;re at the oldest post</span>
-            </div>
-          )}
-          {next ? (
-            <Link className="pn next" href={`/p/${next.slug}`}>
-              <small>Next post →</small>
-              <span className="h-anton">{postDisplayTitle(next)}</span>
-            </Link>
-          ) : (
-            <div className="pn next disabled">
-              <small>Next post →</small>
-              <span>You&apos;re reading the latest post</span>
-            </div>
-          )}
-        </div>
-      </section>
+            ))}
+          </div>
+          <div className="prevnext">
+            {prev ? (
+              <Link className="pn" href={`/p/${prev.slug}`}>
+                <small>← Previous post</small>
+                <span className="h-anton">{postDisplayTitle(prev)}</span>
+              </Link>
+            ) : (
+              <div className="pn disabled">
+                <small>← Previous post</small>
+                <span>You&apos;re at the oldest post</span>
+              </div>
+            )}
+            {next ? (
+              <Link className="pn next" href={`/p/${next.slug}`}>
+                <small>Next post →</small>
+                <span className="h-anton">{postDisplayTitle(next)}</span>
+              </Link>
+            ) : (
+              <div className="pn next disabled">
+                <small>Next post →</small>
+                <span>You&apos;re reading the latest post</span>
+              </div>
+            )}
+          </div>
+        </section>
+      )}
 
       <BlogServices variant="strip" />
       <BlogNewsletter />

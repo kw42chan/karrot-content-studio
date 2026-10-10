@@ -7,26 +7,18 @@ import {
 } from "@/lib/blog/format";
 import { coverWordForPost } from "@/lib/blog/public-posts";
 import type { PublicBlogPost } from "@/lib/blog/types";
-import type { SamplePostCard } from "@/lib/blog/sample-posts";
 import Link from "next/link";
 
-function Cover({ post, sample }: { post?: PublicBlogPost; sample?: SamplePostCard }) {
-  if (sample) {
-    return (
-      <div className="cover sample">
-        <span>Sample cover</span>
-      </div>
-    );
-  }
-  if (post?.cover_url) {
+function Cover({ post }: { post: PublicBlogPost }) {
+  if (post.cover_url) {
     return (
       <div className="cover" style={{ backgroundImage: `url(${post.cover_url})`, backgroundSize: "cover" }}>
         <span className="cover-word h-anton" />
       </div>
     );
   }
-  const coverText = coverWordForPost(post!);
-  const coverLang = post!.body_language === "zh-HK" ? "zh-Hant-HK" : "en";
+  const coverText = coverWordForPost(post);
+  const coverLang = post.body_language === "zh-HK" ? "zh-Hant-HK" : "en";
   return (
     <div className="cover">
       <span className="cover-word h-anton" lang={coverLang} style={{ whiteSpace: "pre-line" }}>
@@ -38,36 +30,11 @@ function Cover({ post, sample }: { post?: PublicBlogPost; sample?: SamplePostCar
 
 export function BlogPostCard({
   post,
-  sample,
   previousLabel,
-  samplePrevious,
 }: {
-  post?: PublicBlogPost;
-  sample?: SamplePostCard;
+  post: PublicBlogPost;
   previousLabel?: boolean;
-  samplePrevious?: boolean;
 }) {
-  if (sample) {
-    return (
-      <div className="post-card is-sample">
-        <Cover sample={sample} />
-        <div className="post-card-body">
-          <div className="card-top">
-            <span className="cat-label">{categoryLabel(sample.category)}</span>
-            {samplePrevious && (
-              <span className="sample-tag" style={{ borderStyle: "solid" }}>Previous post</span>
-            )}
-            <span className="sample-tag">Sample</span>
-          </div>
-          <h3 className="h-anton">{sample.title}</h3>
-          <p className="dek">{sample.excerpt}</p>
-          <div className="post-meta">{sample.dateLabel} · {readTimeLabel(sample.readTime)}</div>
-        </div>
-      </div>
-    );
-  }
-
-  if (!post) return null;
   const href = `/p/${post.slug}`;
   const meta = `${formatPostDateUpper(post.published_at)} · ${readTimeLabel(post.read_time)}`;
 
