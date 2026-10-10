@@ -36,6 +36,7 @@ import {
   type ChannelGenerationPrefs,
 } from "@/lib/studio/generation-prefs";
 import type { PostCategory } from "@/lib/blog/categories";
+import { studioListTitle } from "@/lib/blog/public-posts";
 import { navigateToStudioPostsHomeAfterEditorDelete } from "@/lib/studio/routes";
 import {
   effectiveSeoTitle,
@@ -265,6 +266,11 @@ export function PostEditor({
   const tabSuggestions = useMemo(
     () => localSuggestions.filter((s) => (s.channel ?? "blog") === suggestionChannel),
     [localSuggestions, suggestionChannel],
+  );
+
+  const editorChromeTitle = useMemo(
+    () => studioListTitle({ title, slug, seo_title: seoTitle }),
+    [title, slug, seoTitle],
   );
 
   const bodyDisplay = useMemo(() => stripSourcesForEditor(body), [body]);
@@ -643,16 +649,19 @@ export function PostEditor({
         notify(result.error, true);
         return;
       }
+      setPublishing(false);
+      setSaving(false);
       setStatus("published");
       setSlug(result.slug ?? resolved.slug);
       if (resolved.seoTitle !== seoTitle) setSeoTitle(resolved.seoTitle);
       if (resolved.metaDescription !== metaDescription) setMetaDescription(resolved.metaDescription);
-      const url = `${window.location.origin}/p/${result.slug}`;
+      const url = `${window.location.origin}/p/${result.slug ?? resolved.slug}`;
       notify(`Published. ${url}`);
     } catch (e) {
       notify(e instanceof Error ? e.message : "Publish failed.", true);
     } finally {
       setPublishing(false);
+      setSaving(false);
     }
   }
 
@@ -713,7 +722,7 @@ export function PostEditor({
             <div className="studio-crumb">
               <Link href={postsHref}>Posts</Link>
               <span className="studio-crumb-sep">/</span>
-              <span className="studio-crumb-title">{title}</span>
+              <span className="studio-crumb-title">{editorChromeTitle}</span>
             </div>
           </div>
           <span

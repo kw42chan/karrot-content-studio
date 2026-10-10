@@ -35,6 +35,16 @@ describe("isTestOrInternalPost", () => {
 });
 
 describe("studioListTitle", () => {
+  it("uses post title in studio, not seo_title", () => {
+    expect(
+      studioListTitle({
+        title: "如何安全註冊並使用官方Claude Opus 5.5？",
+        slug: "claude-opus-register",
+        seo_title: "中國護照註冊Claude帳號可行嗎？",
+      }),
+    ).toBe("如何安全註冊並使用官方Claude Opus 5.5？");
+  });
+
   it("shows Untitled draft for timestamp internal titles", () => {
     expect(
       studioListTitle({

@@ -28,16 +28,14 @@ export function looksLikeInternalTitle(text: string): boolean {
   return false;
 }
 
-/** Title shown in the studio posts list (never raw timestamp ids). */
+/** Title shown in the studio posts list and editor chrome — post title, not SEO title. */
 export function studioListTitle(post: {
   title: string;
   slug: string;
   seo_title?: string | null;
 }): string {
-  const display = publicDisplayTitle(post);
-  if (display === "Post" && looksLikeInternalTitle(post.title)) return "Untitled draft";
-  if (looksLikeInternalTitle(post.title) && looksLikeInternalTitle(display)) return "Untitled draft";
-  return display;
+  if (looksLikeInternalTitle(post.title.trim())) return "Untitled draft";
+  return publicArticleHeadline({ title: post.title, slug: post.slug });
 }
 
 export function isTestOrInternalPost(post: {
